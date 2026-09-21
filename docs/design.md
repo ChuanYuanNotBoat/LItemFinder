@@ -733,27 +733,52 @@ Planner:
 
 ---
 
-## Phase 4
+## Phase 4（下一阶段）
 
-Fabric:
+NeoForge 1.21.1：
 
-- Container Scanner
-- Render
+- 客户端专用模块与构建
+- 只读 Container Scanner
+- ItemStack、Data Components 与标签适配
+- 潜影盒嵌套内容
+- SQLite 生命周期与 Alpha 打包
+
+详细计划见 [next-phase-neoforge-1.21.1.md](next-phase-neoforge-1.21.1.md)。
 
 ---
 
 ## Phase 5
 
-NeoForge / Forge
+NeoForge 客户端体验：
+
+- Search UI
+- HUD / Route Render
+- 分组与诊断界面
 
 ---
 
 ## Phase 6
 
-Meteor:
+Fabric 1.21.1：
+
+- 复用稳定后的适配器边界
+- Container Scanner
+- 客户端 UI 对齐
+
+---
+
+## Phase 7
+
+Meteor：
 
 - Baritone
 - Automation
+
+---
+
+## Phase 8
+
+Forge 1.20.1 与其他历史热门版本。
 
 ---
 

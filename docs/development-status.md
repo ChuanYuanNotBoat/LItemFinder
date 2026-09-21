@@ -66,9 +66,17 @@
 - 已实现多物品路线、同维度距离排序、单站合并拾取和缺货报告。
 - Core v1 的模型、索引、搜索、持久化、分类、整理和路线范围已完成。
 
+## 下一阶段状态
+
+- 已选择 NeoForge 1.21.1 作为首个 Loader 和 Minecraft 版本。
+- 已完成只读容器采集阶段的模块、线程、身份、组件、持久化、测试与发布计划。
+- 计划基线为 NeoForge 21.1.251、ModDevGradle 2.0.147、Gradle 9.2.1、Java 21。
+- 实现尚未开始；当前 Wrapper 仍为 Gradle 8.12，升级属于下一阶段 M0 的独立验证提交。
+- 详细计划见 `docs/next-phase-neoforge-1.21.1.md`。
+
 ## 待确认的设计决策
 
 - 发布坐标和 Java 包名目前使用 `dev.litemfinder`，正式发布前仍可调整。
-- 第一批支持的 Minecraft 版本和首个 Loader 尚未确定。
+- 首个目标已确定为 Minecraft 1.21.1 + NeoForge；Fabric 1.21.1 在适配边界稳定后跟进。
 - `ItemKey` 已预留不透明 `variant`；数据组件/NBT 的规范化与模糊匹配规则仍需在 Loader 接入前确定。
 - SQLite 已确定使用独立 `storage-sqlite` 模块；历史快照保留和 schema 迁移策略仍待确定。

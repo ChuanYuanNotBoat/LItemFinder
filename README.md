@@ -96,9 +96,10 @@ SQLite 持久化基础结构已经包含：
 
 Core v1 的完成范围和集成边界见 [docs/core-v1.md](docs/core-v1.md)。
 
-Core v1 完成后的平台阶段：
+下一平台阶段的完整计划见
+[docs/next-phase-neoforge-1.21.1.md](docs/next-phase-neoforge-1.21.1.md)。执行顺序为：
 
-1. 选择首个 Minecraft 版本和 Loader，实现只读容器采集适配。
+1. NeoForge 1.21.1 只读容器采集、SQLite 接入与 Alpha 打包。
 2. 将游戏标签与组件数据规范化为 Core 的标签和 variant。
 3. 实现搜索 UI、HUD 和路线显示。
 4. 最后再接入 Meteor/Baritone 执行 `MoveTask` 和 `RoutePlan`。
