@@ -1,5 +1,7 @@
 # LItemFinder
 
+[![CI](https://github.com/ChuanYuanNotBoat/LItemFinder/actions/workflows/ci.yml/badge.svg)](https://github.com/ChuanYuanNotBoat/LItemFinder/actions/workflows/ci.yml)
+
 LItemFinder 是一个面向 Minecraft 客户端的物品与容器索引项目。当前阶段搭建与
 Minecraft API 无关的 Core 和独立持久化模块；Fabric、Forge、NeoForge 和 Meteor 集成将在
 Core 的领域模型、存储与搜索接口稳定后再单独接入。
@@ -79,6 +81,12 @@ Core index/search 基础结构已经包含：
 - 精确物品、命名空间、标签和组合分类规则
 - 带优先级和确定性冲突处理的 `StorageGroup`
 
+规划基础结构已经包含：
+
+- 带嵌套源路径的声明式 `MoveTask`
+- 保护嵌套容器本体的仓库分类整理计划
+- 多物品需求、世界距离、确定性访问顺序和缺货报告
+
 SQLite 持久化基础结构已经包含：
 
 - 版本化数据库 schema 和完整递归快照往返
@@ -86,9 +94,11 @@ SQLite 持久化基础结构已经包含：
 - 重启后从持久快照恢复内存索引
 - 隔离在独立模块中的 SQLite JDBC 运行时依赖
 
-下一步：
+Core v1 的完成范围和集成边界见 [docs/core-v1.md](docs/core-v1.md)。
 
-1. 实现 `MoveTask` 与基于分组规则的仓库整理规划。
-2. 实现多物品需求和缺货报告的取物路线规划。
-3. 设计 SQLite schema 迁移和可选历史快照保留策略。
-4. Core 稳定后，先选择一个 Loader 实现只读容器采集适配。
+Core v1 完成后的平台阶段：
+
+1. 选择首个 Minecraft 版本和 Loader，实现只读容器采集适配。
+2. 将游戏标签与组件数据规范化为 Core 的标签和 variant。
+3. 实现搜索 UI、HUD 和路线显示。
+4. 最后再接入 Meteor/Baritone 执行 `MoveTask` 和 `RoutePlan`。
