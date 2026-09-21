@@ -822,3 +822,22 @@ Loader 必须在进入 Core 前完成 `ItemStack`、注册表 ID、维度与容�
 
 当前内存索引只保证进程内状态，不承担历史记录或持久化；这些能力由后续仓储接口和
 SQLite 实现提供。
+
+---
+
+# 20. Snapshot Persistence v0.1 约定
+
+持久化边界位于 Core，SQLite 实现位于独立的 `storage-sqlite` 模块：
+
+- `core` 只定义 `SnapshotRepository`，不依赖 JDBC 驱动或 SQLite API。
+- SQLite JDBC 是 `storage-sqlite` 的运行时依赖，不传递到领域模型。
+- schema 版本通过 SQLite `user_version` 管理；当前版本为 1。
+- 容器、元数据和槽位使用规范化表保存，不依赖 JSON 序列化库。
+- 保存根快照时在同一事务内删除旧树并写入新树，失败时整体回滚。
+- 数据库已有更新快照时拒绝旧写入，与内存索引保持一致。
+- 外键和级联删除保证移除根快照时不会遗留嵌套容器或槽位。
+- schema 版本高于当前程序能力时拒绝打开，避免新数据被旧程序破坏。
+- 应用启动时使用 `SnapshotIndexLoader` 将持久快照恢复到 `StorageIndex`。
+
+v0.1 只保存每个根容器的最新快照，不保存变化历史；历史表和迁移脚本将在实际升级
+需求出现时增加。

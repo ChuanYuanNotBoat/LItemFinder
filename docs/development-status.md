@@ -26,7 +26,7 @@
 - 初始化单仓库、多模块 Gradle 基础结构，但目前只包含 `core`。
 - Core 使用 Java 21，并预留 JUnit 5 测试依赖。
 - 增加轻量的 Core 导入边界检查。
-- 暂不添加 SQLite 驱动，也不创建任何 Minecraft Loader 模块。
+- SQLite 驱动已隔离到独立模块；仍未创建任何 Minecraft Loader 模块。
 
 ## Core Model 实现状态
 
@@ -43,9 +43,18 @@
 - 已定义 `SearchEngine`，支持精确查询、variant 隔离、数量汇总和稳定排序。
 - 集成测试已覆盖 10 个容器、100 种物品的纯 Java 场景。
 
+## Snapshot Persistence 实现状态
+
+- 已在 Core 定义技术无关的 `SnapshotRepository` 和启动索引恢复器。
+- 已新增独立 `storage-sqlite` 模块，固定 SQLite JDBC 3.53.4.0。
+- schema v1 保存根快照、递归容器、元数据、槽位、variant 和观测时间。
+- 写入使用事务，支持旧快照拒绝、完整替换和外键级联删除。
+- 集成测试覆盖关闭后重新打开数据库、模型完整往返和索引重建。
+- 高于当前支持版本的数据库 schema 会被安全拒绝。
+
 ## 待确认的设计决策
 
 - 发布坐标和 Java 包名目前使用 `dev.litemfinder`，正式发布前仍可调整。
 - 第一批支持的 Minecraft 版本和首个 Loader 尚未确定。
 - `ItemKey` 已预留不透明 `variant`；数据组件/NBT 的规范化与模糊匹配规则仍需在 Loader 接入前确定。
-- SQLite 是直接作为 Core 的实现子包，还是拆为独立 `storage-sqlite` 模块，可在接口成形后决定。
+- SQLite 已确定使用独立 `storage-sqlite` 模块；历史快照保留和 schema 迁移策略仍待确定。

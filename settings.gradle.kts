@@ -1,3 +1,3 @@
 rootProject.name = "LItemFinder"
 
-include("core")
+include("core", "storage-sqlite")
