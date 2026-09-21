@@ -1,6 +1,6 @@
 # 下一阶段计划：NeoForge 1.21.1 只读采集适配器
 
-状态：**实施中；M0 已完成，下一步为 M1**
+状态：**实施中；M0-M1 已完成，下一步为 M2**
 计划基线日期：2026-09-21
 
 ## 1. 阶段目标
@@ -240,12 +240,14 @@ classpath，生产包需要 Jar-in-Jar：
 
 ### M1 — 映射与纯协调器
 
-- `ResourceLocation`、ItemStack 和标签转换器。
-- variant v1 规范化及特征测试。
-- scope、方块、玩家和会话身份 resolver。
-- 不依赖 Minecraft 类型的防抖/合并协调器测试。
+- [x] `ResourceLocation`、ItemStack 和标签转换器。
+- [x] variant v1 规范化及特征测试。
+- [x] scope、方块、玩家、实体和会话身份 resolver。
+- [x] 不依赖 Minecraft 类型的防抖/合并协调器测试。
 
-退出条件：相同输入稳定生成相同 Core 值；隐私字段不落盘。
+退出条件：**已满足（2026-09-21）**。相同组件输入稳定生成同一 Core variant；物品数量不进入
+variant；原始服务器地址和存档路径只作为 SHA-256 输入，不进入 scope、容器 metadata 或数据库。
+详细证据见 [M1 验收记录](validation/m1-mapping-identities.md)。
 
 ### M2 — 菜单发现与槽位分区
 

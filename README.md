@@ -116,6 +116,15 @@ NeoForge 1.21.1 适配器 M0 已经包含：
 - 包含三个依赖的 NeoForge Jar-in-Jar 安装包
 - 源码客户端与成品 JAR 客户端的 SQLite native smoke test
 
+NeoForge 1.21.1 适配器 M1 已经包含：
+
+- `ResourceLocation`、`ItemStack` 与物品标签到 Core 值的映射
+- 基于持久化 Data Components 的 `components:v1:<sha256>` variant
+- 不暴露存档路径或服务器地址的 `scope:v1:<sha256>`
+- 玩家、末影箱、方块、实体和会话级容器身份策略
+- 可独立测试的 1 tick 初始延迟、5 tick 变化防抖与按容器最新值合并
+- 资源重载和断线时清空、搜索线程无需访问游戏注册表的标签缓存
+
 Core v1 的完成范围和集成边界见 [docs/core-v1.md](docs/core-v1.md)。
 
 当前平台阶段的完整计划见

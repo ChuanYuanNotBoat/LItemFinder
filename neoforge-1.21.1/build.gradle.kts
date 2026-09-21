@@ -36,6 +36,7 @@ val preparePackagedClientMod by tasks.registering(Sync::class) {
 
 neoForge {
     version = neoVersion
+    addModdingDependenciesTo(sourceSets.test.get())
 
     parchment {
         minecraftVersion = parchmentMinecraftVersion
@@ -64,6 +65,11 @@ neoForge {
             sourceSet(coreMain.get())
             sourceSet(sqliteMain.get())
         }
+    }
+
+    unitTest {
+        enable()
+        testedMod.set(mods.named(modId))
     }
 }
 

@@ -72,8 +72,9 @@
 - 已完成只读容器采集阶段的模块、线程、身份、组件、持久化、测试与发布计划。
 - 已锁定 NeoForge 21.1.251、ModDevGradle 2.0.147、Gradle 9.2.1、Java 21 基线。
 - M0 已完成：客户端专用入口、开发类路径、Jar-in-Jar 安装包和 SQLite native smoke 均已验证。
-- 当前共有 25 项自动化测试；根 `clean check` 继续验证 Core 边界和全部模块。
-- 下一实现里程碑是 M1：ItemStack/标签/variant 映射、scope/容器身份和纯协调器。
+- M1 已完成：ItemStack/标签/variant 映射、scope/容器身份和纯协调器均已实现。
+- 当前共有 46 项自动化测试；根 `clean check` 继续验证 Core 边界和全部模块。
+- 下一实现里程碑是 M2：菜单发现、槽位分区、内容指纹和只在变化时采集。
 - 详细计划见 `docs/next-phase-neoforge-1.21.1.md`。
 
 ## 待确认的设计决策
