@@ -69,6 +69,13 @@ public final class InMemoryStorageIndex implements StorageIndex {
     }
 
     @Override
+    public synchronized List<StorageEntry> allEntries() {
+        return roots.values().stream()
+                .flatMap(root -> root.entries().stream())
+                .toList();
+    }
+
+    @Override
     public synchronized Optional<Instant> latestCaptureTime(ContainerId rootContainerId) {
         Objects.requireNonNull(rootContainerId, "rootContainerId must not be null");
         IndexedRoot root = roots.get(rootContainerId);

@@ -17,6 +17,8 @@ public interface StorageIndex {
 
     List<StorageEntry> findExact(ItemKey item);
 
+    List<StorageEntry> allEntries();
+
     Optional<Instant> latestCaptureTime(ContainerId rootContainerId);
 
     int rootContainerCount();

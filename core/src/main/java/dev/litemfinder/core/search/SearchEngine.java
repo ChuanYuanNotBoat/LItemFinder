@@ -6,4 +6,6 @@ import dev.litemfinder.core.model.ItemKey;
 public interface SearchEngine {
 
     SearchResult findExact(ItemKey item);
+
+    SearchResponse search(SearchQuery query);
 }
