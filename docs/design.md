@@ -1,0 +1,806 @@
+> **LItem Finder = Minecraft 跨 Loader 客户端仓储智能系统**
+> Core 负责“理解仓库”，Loader/Meteor 负责“连接 Minecraft”和“执行操作”。
+
+---
+
+# LItem Finder Design Document
+
+## 1. 项目目标
+
+LItem Finder 旨在提供一个跨 Minecraft 客户端平台的智能仓库管理系统。
+
+核心能力：
+
+- 记录玩家访问过的存储空间
+- 建立本地物品索引
+- 搜索物品来源
+- 分析仓库结构
+- 规划物品获取路线
+- 优化仓库存储结构
+
+支持：
+
+- Fabric
+- Forge
+- NeoForge
+- Meteor Addon
+
+---
+
+# 2. 核心设计原则
+
+## 2.1 Core 与 Minecraft 解耦
+
+Core 禁止依赖：
+
+```
+net.minecraft.*
+fabric.*
+forge.*
+neoforge.*
+meteor.*
+```
+
+Core 只处理抽象数据：
+
+```
+Item
+Container
+Inventory
+Storage
+Task
+```
+
+---
+
+## 2.2 Core 不执行操作
+
+Core 输出：
+
+```
+我要移动什么
+从哪里
+到哪里
+多少数量
+```
+
+但是：
+
+Core:
+
+```
+MoveTask
+```
+
+Loader:
+
+```
+点击槽位
+打开箱子
+发送packet
+```
+
+---
+
+## 2.3 信息来源有限
+
+LItem Finder 不扫描未知区域。
+
+数据来源：
+
+- 玩家打开过的容器
+- 玩家背包
+- 模组提供的数据接口
+
+---
+
+# 3. 总体架构
+
+```
+                    LItem Finder
+
+                         |
+        ------------------------------------
+        |                                  |
+      Core                           Platform Layer
+        |                                  |
+        |                     --------------------------
+        |                     |      |       |        |
+        |                  Fabric Forge NeoForge Meteor
+        |
+ ------------------------------------------------
+ |
+ Model
+ Index
+ Search
+ Planner
+ Optimizer
+ Database
+```
+
+---
+
+# 4. Core 模块设计
+
+## 4.1 Model
+
+负责定义世界模型。
+
+---
+
+## ItemKey
+
+表示一个物品类型。
+
+```java
+ItemKey
+{
+    namespace
+    id
+    variant
+}
+```
+
+例：
+
+```
+minecraft:diamond
+
+create:copper_sheet
+```
+
+未来支持：
+
+- NBT
+- 附魔
+- 数据组件
+
+---
+
+## ItemStackInfo
+
+表示物品数量。
+
+```java
+ItemStackInfo
+{
+    ItemKey item;
+
+    long count;
+}
+```
+
+---
+
+## Container
+
+表示一个存储单位。
+
+包括：
+
+- 箱子
+- 玩家背包
+- 末影箱
+- 潜影盒
+- 模组背包
+
+抽象：
+
+```java
+Container
+{
+    id;
+
+    type;
+
+    location;
+
+    metadata;
+}
+```
+
+---
+
+## ContainerLocation
+
+位置独立。
+
+```java
+Location
+{
+    dimension;
+
+    x;
+
+    y;
+
+    z;
+}
+```
+
+原因：
+
+玩家背包没有坐标。
+
+---
+
+## InventorySnapshot
+
+容器某一时间状态。
+
+例如：
+
+```
+Chest A
+
+diamond 64
+iron 128
+stone 500
+```
+
+---
+
+# 5. Storage Index
+
+## 目标
+
+建立：
+
+```
+Item
+ |
+ +-- Container
+        |
+        +-- Nested Container
+```
+
+关系。
+
+例如：
+
+```
+Diamond
+
+来源:
+
+Chest A
+ └── Blue Shulker
+       └── Slot 12
+```
+
+---
+
+## 数据结构
+
+```
+ItemIndex
+
+ItemKey
+ |
+ List<StorageEntry>
+```
+
+StorageEntry:
+
+```
+container
+amount
+path
+lastUpdate
+```
+
+---
+
+# 6. 潜影盒/嵌套容器系统
+
+支持：
+
+```
+Chest
+
+ └── Shulker Box
+
+       └── Item
+```
+
+形成：
+
+```
+Container Tree
+```
+
+例如：
+
+```
+Chest#1
+
+ └── Slot 5
+
+      └── Shulker#A
+
+            └── Diamond
+```
+
+---
+
+# 7. Search Engine
+
+## 功能
+
+输入：
+
+```
+diamond
+```
+
+输出：
+
+```
+Container A
+距离 30m
+数量 128
+
+Container B
+距离 100m
+数量 64
+```
+
+---
+
+支持：
+
+- 精确搜索
+- 标签搜索
+- 模组搜索
+- 数量过滤
+
+---
+
+# 8. Storage Group
+
+仓库分组。
+
+例如：
+
+```
+Base Storage
+
+├── Mineral
+├── Building
+├── Food
+├── Redstone
+└── Tools
+```
+
+---
+
+Group 属性：
+
+```
+name
+
+containers
+
+rules
+```
+
+---
+
+# 9. Storage Classification
+
+分类规则。
+
+例如：
+
+```json
+{
+ "Mineral":[
+    "#forge:ores",
+    "minecraft:diamond"
+ ],
+
+ "Food":[
+    "#minecraft:foods"
+ ]
+}
+```
+
+---
+
+用途：
+
+- 搜索过滤
+- 整理规划
+
+---
+
+# 10. Storage Optimizer（核心特色）
+
+## 定义
+
+不是箱子排序。
+
+而是：
+
+> 对整个仓库进行重新组织。
+
+类似：
+
+Windows 磁盘碎片整理。
+
+---
+
+输入：
+
+```
+当前仓库状态
++
+分类规则
+```
+
+输出：
+
+```
+优化方案
+```
+
+---
+
+例：
+
+当前：
+
+```
+Chest A:
+
+Iron 32
+Stone 64
+
+
+Chest B:
+
+Iron 128
+
+
+Chest C:
+
+Diamond 5
+Iron 20
+```
+
+目标：
+
+```
+Mineral Chest:
+
+Iron 180
+Diamond 5
+
+
+Building Chest:
+
+Stone 64
+```
+
+---
+
+生成：
+
+```
+MoveTask[]
+```
+
+---
+
+# 11. MoveTask
+
+核心任务单位。
+
+```java
+MoveTask
+{
+    source;
+
+    target;
+
+    item;
+
+    amount;
+}
+```
+
+例如：
+
+```
+Move:
+
+Iron x32
+
+Chest A
+
+-->
+
+Mineral Chest
+```
+
+---
+
+# 12. Route Planner
+
+用于获取资源。
+
+## 输入
+
+需求：
+
+```
+iron 500
+
+diamond 20
+```
+
+库存：
+
+```
+Chest A
+Iron 300
+
+Chest B
+Iron 200
+
+Chest C
+Diamond 20
+```
+
+---
+
+输出：
+
+```
+Route:
+
+Chest A
+
+↓
+
+Chest B
+
+↓
+
+Chest C
+```
+
+---
+
+目标：
+
+最小化：
+
+```
+距离
+
++
+打开次数
+
++
+操作次数
+```
+
+---
+
+# 13. Database
+
+第一版：
+
+SQLite。
+
+保存：
+
+```
+containers
+
+snapshots
+
+items
+
+groups
+
+tasks
+
+history
+```
+
+---
+
+# 14. Platform Adapter
+
+## Fabric / Forge / NeoForge
+
+负责：
+
+- 读取 ItemStack
+- 监听容器打开
+- 获取世界信息
+- 渲染
+
+---
+
+## Meteor Addon
+
+额外能力：
+
+### 自动导航
+
+调用：
+
+```
+Baritone API
+```
+
+### 自动整理
+
+执行：
+
+```
+MoveTask
+```
+
+### 自动搬运
+
+模拟：
+
+```
+Container Click
+```
+
+---
+
+# 15. 功能分级
+
+## Core
+
+✅
+
+- 数据模型
+- 索引
+- 搜索
+- 潜影盒解析
+- 分组
+- 分类
+- 整理规划
+
+---
+
+## Client Mod
+
+✅
+
+- 读取容器
+- HUD
+- ESP
+- 路线显示
+
+---
+
+## Meteor
+
+增强：
+
+- Baritone
+- 自动移动
+- 自动整理
+- 自动取物
+
+---
+
+# 16. 开发阶段
+
+## Phase 0
+
+工程：
+
+- Gradle
+- Core
+- Test
+
+---
+
+## Phase 1
+
+Core：
+
+- Model
+- Index
+- Search
+
+---
+
+## Phase 2
+
+Persistence:
+
+- SQLite
+- Cache
+
+---
+
+## Phase 3
+
+Planner:
+
+- MoveTask
+- StorageOptimizer
+
+---
+
+## Phase 4
+
+Fabric:
+
+- Container Scanner
+- Render
+
+---
+
+## Phase 5
+
+NeoForge / Forge
+
+---
+
+## Phase 6
+
+Meteor:
+
+- Baritone
+- Automation
+
+---
+
+# 17. 非目标
+
+暂不考虑：
+
+- 服务端 Mod
+- 自动扫描未访问区域
+- 绕过服务器限制
+- AE2 网络替代
+- 自动破坏/放置方块
+
+---
+
+# 当前第一开发任务
+
+> 实现 Core Model 层。
+
+验收：
+
+可以在纯 Java 环境模拟：
+
+```
+10个箱子
+100种物品
+嵌套潜影盒
+
+搜索物品
+
+生成整理方案
+```
+
+并通过单元测试。
+
+---
+
+# 18. Core Model v0.1 约定
+
+当前实现将设计中的抽象落实为以下纯 Java 约束：
+
+- 所有游戏注册表标识使用显式的 `namespace:path`，不隐式补全命名空间。
+- `ItemKey.variant` 是可选的、不透明的适配器数据；Core 不直接解析 NBT 或数据组件。
+- 物品数量使用正 `long`，避免把空槽伪装成数量为零的物品；空槽不写入快照。
+- 容器类型使用可扩展的命名空间标识，而不是封闭枚举，以容纳模组容器。
+- 位置分为带世界/服务器作用域的方块坐标和无坐标逻辑位置。
+- `InventorySnapshot` 是带采集时间的不可变快照，并允许槽位指向另一个嵌套快照。
+- `ContainerPath` 从根容器开始记录“父槽位 → 子容器”的路径，供索引层使用。
+
+Loader 必须在进入 Core 前完成 `ItemStack`、注册表 ID、维度与容器身份的转换。

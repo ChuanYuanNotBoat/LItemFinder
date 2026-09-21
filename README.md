@@ -1,0 +1,72 @@
+# LItemFinder
+
+LItemFinder 是一个面向 Minecraft 客户端的物品与容器索引项目。当前阶段只搭建与
+Minecraft API 无关的 Core；Fabric、Forge、NeoForge 和 Meteor 集成将在 Core 的领域模型、
+存储与搜索接口稳定后再单独接入。
+
+## 当前结构
+
+```text
+LItemFinder/
+├── core/       # 纯 Java 领域模型、索引、存储接口、搜索与规划
+└── docs/       # 架构记录和开发状态
+```
+
+计划中的 Loader 模块不属于 Core：
+
+```text
+fabric/         # Minecraft/Fabric 事件与数据适配
+forge/          # Minecraft/Forge 适配
+neoforge/       # Minecraft/NeoForge 适配
+meteor/         # 可选的 Meteor 自动化层
+```
+
+这些目录暂未创建，以免在核心接口尚未确定时引入映射、Mixin 和 Loader 构建配置。
+
+## 架构边界
+
+- `core` 只使用 Java 标准库和明确选择的通用库。
+- `core` 不得导入 Minecraft、Fabric、Forge、NeoForge 或 Meteor 类。
+- 游戏内的 `ItemStack`、容器位置、NBT/组件数据必须先由 Loader 转换为 Core 自有模型。
+- SQLite 等持久化实现依赖 Core 接口，而不是让领域对象依赖数据库或游戏类。
+- Loader 负责采集与展示；搜索、索引和规划规则留在 Core。
+
+`core` 的 `check` 任务包含一个轻量导入检查，用来尽早发现 Loader 依赖越界。
+
+## 构建
+
+要求 JDK 21。项目使用 Gradle Wrapper，不需要全局安装 Gradle。
+
+Windows：
+
+```powershell
+.\gradlew.bat check
+```
+
+macOS / Linux：
+
+```bash
+./gradlew check
+```
+
+本机环境盘点见 [docs/development-status.md](docs/development-status.md)。
+
+## 许可证
+
+本项目使用 [GNU General Public License v3.0](LICENSE) 发布。
+
+## 下一阶段
+
+Core model 基础结构已经包含：
+
+- `ItemKey` 与可扩展的命名空间标识
+- `ContainerRecord`、世界坐标位置和无坐标逻辑位置
+- 不可变的 `InventorySnapshot`、槽位内容与嵌套容器
+- 用于索引结果的 `ContainerPath`
+
+下一步：
+
+1. 定义索引仓储接口与 SQLite 实现边界。
+2. 定义查询语法和 `SearchEngine`，并用纯 Java 单元测试固定行为。
+3. 实现快照到索引条目的展开规则。
+4. Core 稳定后，先选择一个 Loader 实现只读容器采集适配。
