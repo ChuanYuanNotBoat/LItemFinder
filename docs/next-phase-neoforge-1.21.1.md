@@ -1,6 +1,6 @@
 # 下一阶段计划：NeoForge 1.21.1 只读采集适配器
 
-状态：**已规划，尚未开始实现**
+状态：**实施中；M0 已完成，下一步为 M1**
 计划基线日期：2026-09-21
 
 ## 1. 阶段目标
@@ -229,13 +229,14 @@ classpath，生产包需要 Jar-in-Jar：
 
 ### M0 — 构建与依赖验证
 
-- 升级 Wrapper 到官方 MDK 使用的 Gradle 版本。
-- 保证现有 24 项测试和 Core 零运行时依赖检查继续通过。
-- 新建 `neoforge-1.21.1` 模块和客户端专用空入口。
-- `runClient` 能进入主菜单。
-- 验证 Core/SQLite/SQLite native library 在开发和 Jar-in-Jar 两种运行方式下可加载。
+- [x] 升级 Wrapper 到官方 MDK 使用的 Gradle 9.2.1。
+- [x] 保证原有 24 项测试和 Core 零运行时依赖检查继续通过，并增加 1 项 SQLite runtime probe 测试。
+- [x] 新建 `neoforge-1.21.1` 模块和客户端专用空入口。
+- [x] `runClient` 能进入主菜单。
+- [x] 验证 Core/SQLite/SQLite native library 在开发和 Jar-in-Jar 两种运行方式下可加载。
 
-退出条件：构建、主菜单启动、数据库 smoke test 全部通过。SQLite 打包失败时不进入 M1。
+退出条件：**已满足（2026-09-21）**。构建、主菜单启动、数据库 smoke test 和隔离成品 JAR
+启动全部通过；详细证据见 [M0 验收记录](validation/m0-neoforge-1.21.1.md)。
 
 ### M1 — 映射与纯协调器
 

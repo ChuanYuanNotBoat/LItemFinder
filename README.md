@@ -2,17 +2,17 @@
 
 [![CI](https://github.com/ChuanYuanNotBoat/LItemFinder/actions/workflows/ci.yml/badge.svg)](https://github.com/ChuanYuanNotBoat/LItemFinder/actions/workflows/ci.yml)
 
-LItemFinder 是一个面向 Minecraft 客户端的物品与容器索引项目。当前阶段搭建与
-Minecraft API 无关的 Core 和独立持久化模块；Fabric、Forge、NeoForge 和 Meteor 集成将在
-Core 的领域模型、存储与搜索接口稳定后再单独接入。
+LItemFinder 是一个面向 Minecraft 客户端的物品与容器索引项目。纯 Java Core v1 已完成，
+当前正在实现第一个 Minecraft 平台适配器：NeoForge 1.21.1 客户端 Mod。
 
 ## 当前结构
 
 ```text
 LItemFinder/
-├── core/             # 纯 Java 领域模型、索引、存储接口、搜索与规划
-├── storage-sqlite/   # 独立的 SQLite 快照持久化实现
-└── docs/             # 架构记录和开发状态
+├── core/              # 纯 Java 领域模型、索引、存储接口、搜索与规划
+├── storage-sqlite/    # 独立的 SQLite 快照持久化实现
+├── neoforge-1.21.1/   # NeoForge 1.21.1 客户端适配器
+└── docs/              # 架构记录、计划和验收记录
 ```
 
 计划中的 Loader 模块不属于 Core：
@@ -20,11 +20,10 @@ LItemFinder/
 ```text
 fabric/         # Minecraft/Fabric 事件与数据适配
 forge/          # Minecraft/Forge 适配
-neoforge/       # Minecraft/NeoForge 适配
 meteor/         # 可选的 Meteor 自动化层
 ```
 
-这些目录暂未创建，以免在核心接口尚未确定时引入映射、Mixin 和 Loader 构建配置。
+Fabric、Forge 和 Meteor 仍未创建；它们会在 NeoForge 适配边界稳定后接入。
 
 ## 架构边界
 
@@ -51,6 +50,21 @@ macOS / Linux：
 ```bash
 ./gradlew check
 ```
+
+启动 NeoForge 开发客户端：
+
+```powershell
+.\gradlew.bat :neoforge-1.21.1:runClient
+```
+
+验证实际安装 JAR 及其 Jar-in-Jar 依赖：
+
+```powershell
+.\gradlew.bat :neoforge-1.21.1:runPackagedClient
+```
+
+两个运行任务只用于开发。普通 `runClient` 从源码运行；`runPackagedClient` 在隔离目录中仅加载
+构建后的安装 JAR。
 
 本机环境盘点见 [docs/development-status.md](docs/development-status.md)。
 
@@ -94,9 +108,17 @@ SQLite 持久化基础结构已经包含：
 - 重启后从持久快照恢复内存索引
 - 隔离在独立模块中的 SQLite JDBC 运行时依赖
 
+NeoForge 1.21.1 适配器 M0 已经包含：
+
+- `Dist.CLIENT` 隔离的最小 Mod 入口
+- Gradle 9.2.1、ModDevGradle 2.0.147、NeoForge 21.1.251 和 Java 21 构建链
+- Core、SQLite 存储层与 SQLite JDBC 的开发运行时装配
+- 包含三个依赖的 NeoForge Jar-in-Jar 安装包
+- 源码客户端与成品 JAR 客户端的 SQLite native smoke test
+
 Core v1 的完成范围和集成边界见 [docs/core-v1.md](docs/core-v1.md)。
 
-下一平台阶段的完整计划见
+当前平台阶段的完整计划见
 [docs/next-phase-neoforge-1.21.1.md](docs/next-phase-neoforge-1.21.1.md)。执行顺序为：
 
 1. NeoForge 1.21.1 只读容器采集、SQLite 接入与 Alpha 打包。

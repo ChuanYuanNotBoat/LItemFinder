@@ -16,17 +16,17 @@
 | 默认 Java/Javac | Oracle JDK 17.0.12 |
 | JDK 21 工具链 | 已安装，Temurin 21.0.12.1，位于 Gradle 工具链目录 |
 | 全局 Gradle | 未安装 |
-| Gradle Wrapper | 项目准备时生成，固定使用 Gradle 8.12 |
+| Gradle Wrapper | 固定使用 Gradle 9.2.1 |
 
 默认 `java` 仍指向 JDK 17，但 Gradle 构建脚本明确要求 JDK 21，并可从本机 Gradle
 工具链目录发现现有的 Temurin 21。日常构建应使用仓库内的 Wrapper。
 
 ## 当前准备范围
 
-- 初始化单仓库、多模块 Gradle 基础结构，但目前只包含 `core`。
+- 单仓库包含 `core`、`storage-sqlite` 和 `neoforge-1.21.1` 三个模块。
 - Core 使用 Java 21，并预留 JUnit 5 测试依赖。
 - 增加轻量的 Core 导入边界检查。
-- SQLite 驱动已隔离到独立模块；仍未创建任何 Minecraft Loader 模块。
+- SQLite 驱动已隔离到独立模块；NeoForge 1.21.1 已完成 M0 构建与依赖验证。
 
 ## Core Model 实现状态
 
@@ -70,8 +70,10 @@
 
 - 已选择 NeoForge 1.21.1 作为首个 Loader 和 Minecraft 版本。
 - 已完成只读容器采集阶段的模块、线程、身份、组件、持久化、测试与发布计划。
-- 计划基线为 NeoForge 21.1.251、ModDevGradle 2.0.147、Gradle 9.2.1、Java 21。
-- 实现尚未开始；当前 Wrapper 仍为 Gradle 8.12，升级属于下一阶段 M0 的独立验证提交。
+- 已锁定 NeoForge 21.1.251、ModDevGradle 2.0.147、Gradle 9.2.1、Java 21 基线。
+- M0 已完成：客户端专用入口、开发类路径、Jar-in-Jar 安装包和 SQLite native smoke 均已验证。
+- 当前共有 25 项自动化测试；根 `clean check` 继续验证 Core 边界和全部模块。
+- 下一实现里程碑是 M1：ItemStack/标签/variant 映射、scope/容器身份和纯协调器。
 - 详细计划见 `docs/next-phase-neoforge-1.21.1.md`。
 
 ## 待确认的设计决策
