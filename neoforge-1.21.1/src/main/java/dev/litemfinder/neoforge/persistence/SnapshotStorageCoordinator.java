@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 /** Serializes immutable snapshots to one scope database without blocking the client tick. */
 public final class SnapshotStorageCoordinator implements AutoCloseable {
@@ -87,13 +88,61 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
 
     /** Waits for all work already submitted by the caller to finish without closing the active scope. */
     public void flush() {
-        awaitControl(() -> {
-        }, DEFAULT_CLOSE_TIMEOUT, "flush storage");
+        if (!isAccepting()) {
+            return;
+        }
+        awaitControl(() -> null, DEFAULT_CLOSE_TIMEOUT, "flush storage", null);
     }
 
     /** Drains current work and closes the active scope before the client leaves a world/server. */
     public void leaveScope() {
-        awaitControl(this::closeCurrentScope, DEFAULT_CLOSE_TIMEOUT, "leave scope");
+        if (!isAccepting()) {
+            return;
+        }
+        awaitControl(() -> {
+            closeCurrentScope();
+            return null;
+        }, DEFAULT_CLOSE_TIMEOUT, "leave scope", null);
+    }
+
+    /** Deletes all persisted and in-memory snapshots for the active scope. */
+    public int clearCurrentScopeData() {
+        if (!isAccepting()) {
+            return -1;
+        }
+        return awaitControl(this::clearCurrentScopeDataOnExecutor,
+                DEFAULT_CLOSE_TIMEOUT, "clear current scope data", -1);
+    }
+
+    /** Removes the observed snapshot only if it is still current after earlier writes finish. */
+    public CompletableFuture<Boolean> removeCurrentScopeContainer(InventorySnapshot expectedSnapshot) {
+        Objects.requireNonNull(expectedSnapshot, "expectedSnapshot must not be null");
+        if (!isAccepting()) {
+            return CompletableFuture.completedFuture(false);
+        }
+        ContainerId containerId = expectedSnapshot.container().id();
+        String expectedScope = expectedSnapshot.container().location().scope();
+        CompletableFuture<Boolean> removed = new CompletableFuture<>();
+        try {
+            executor.execute(() -> {
+                try {
+                    boolean snapshotIsCurrent = expectedScope.equals(currentScope)
+                            && currentIndex.rootSnapshots().stream().anyMatch(expectedSnapshot::equals);
+                    if (!snapshotIsCurrent) {
+                        removed.complete(false);
+                        return;
+                    }
+                    boolean repositoryRemoved = currentRepository != null && currentRepository.delete(containerId);
+                    boolean indexRemoved = currentIndex.remove(containerId);
+                    removed.complete(repositoryRemoved || indexRemoved);
+                } catch (Throwable throwable) {
+                    removed.completeExceptionally(throwable);
+                }
+            });
+        } catch (RuntimeException exception) {
+            removed.completeExceptionally(exception);
+        }
+        return removed;
     }
 
     @Override
@@ -104,7 +153,10 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
             }
             accepting = false;
         }
-        awaitControl(this::closeCurrentScope, DEFAULT_CLOSE_TIMEOUT, "shut down storage");
+        awaitControl(() -> {
+            closeCurrentScope();
+            return null;
+        }, DEFAULT_CLOSE_TIMEOUT, "shut down storage", null);
         executor.shutdown();
         try {
             if (!executor.awaitTermination(DEFAULT_CLOSE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
@@ -182,18 +234,41 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
         currentIndex = new InMemoryStorageIndex();
     }
 
-    private void awaitControl(Runnable action, Duration timeout, String description) {
-        CompletableFuture<Void> completed = new CompletableFuture<>();
-        executor.execute(() -> {
-            try {
-                action.run();
-                completed.complete(null);
-            } catch (Throwable throwable) {
-                completed.completeExceptionally(throwable);
-            }
-        });
+    private int clearCurrentScopeDataOnExecutor() {
+        if (currentRepository == null) {
+            currentIndex = new InMemoryStorageIndex();
+            return 0;
+        }
+        var snapshots = currentRepository.findAll();
+        for (InventorySnapshot snapshot : snapshots) {
+            currentRepository.delete(snapshot.container().id());
+        }
+        currentIndex = new InMemoryStorageIndex();
+        return snapshots.size();
+    }
+
+    private boolean isAccepting() {
+        synchronized (pendingLock) {
+            return accepting;
+        }
+    }
+
+    private <T> T awaitControl(Supplier<T> action, Duration timeout, String description, T fallback) {
+        CompletableFuture<T> completed = new CompletableFuture<>();
         try {
-            completed.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            executor.execute(() -> {
+                try {
+                    completed.complete(action.get());
+                } catch (Throwable throwable) {
+                    completed.completeExceptionally(throwable);
+                }
+            });
+        } catch (RuntimeException exception) {
+            LOGGER.error("Failed to schedule {}", description, exception);
+            return fallback;
+        }
+        try {
+            return completed.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             LOGGER.warn("Interrupted while attempting to {}", description, exception);
@@ -202,6 +277,7 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
         } catch (ExecutionException exception) {
             LOGGER.error("Failed to {}", description, exception.getCause());
         }
+        return fallback;
     }
 
     private record PendingSnapshot(String scope, InventorySnapshot snapshot, boolean persistable) {

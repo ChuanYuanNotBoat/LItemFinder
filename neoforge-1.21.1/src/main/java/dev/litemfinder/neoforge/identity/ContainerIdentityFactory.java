@@ -40,15 +40,32 @@ public final class ContainerIdentityFactory {
             int z,
             NamespacedId menuType
     ) {
+        return block(scope, dimension, x, y, z, menuType, null);
+    }
+
+    public static ResolvedContainerIdentity block(
+            String scope,
+            NamespacedId dimension,
+            int x,
+            int y,
+            int z,
+            NamespacedId menuType,
+            NamespacedId minecraftBlock
+    ) {
         String checkedScope = requireScope(scope);
         Objects.requireNonNull(dimension, "dimension must not be null");
         Objects.requireNonNull(menuType, "menuType must not be null");
         String id = "block:" + checkedScope + ":" + dimension + ":" + x + "," + y + "," + z + ":" + menuType;
+        Map<String, String> metadata = new java.util.TreeMap<>();
+        metadata.put("identityConfidence", IdentityConfidence.EXACT.name());
+        if (minecraftBlock != null) {
+            metadata.put("minecraftBlock", minecraftBlock.toString());
+        }
         ContainerRecord record = new ContainerRecord(
                 new ContainerId(id),
                 new ContainerType(menuType),
                 new WorldLocation(checkedScope, dimension, x, y, z),
-                Map.of("identityConfidence", IdentityConfidence.EXACT.name())
+                metadata
         );
         return new ResolvedContainerIdentity(record, IdentityConfidence.EXACT);
     }

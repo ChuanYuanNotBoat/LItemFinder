@@ -3,7 +3,52 @@
 [![CI](https://github.com/ChuanYuanNotBoat/LItemFinder/actions/workflows/ci.yml/badge.svg)](https://github.com/ChuanYuanNotBoat/LItemFinder/actions/workflows/ci.yml)
 
 LItemFinder 是一个面向 Minecraft 客户端的物品与容器索引项目。纯 Java Core v1 已完成，
-当前正在实现第一个 Minecraft 平台适配器：NeoForge 1.21.1 客户端 Mod。
+NeoForge 1.21.1 只读采集适配器已进入 `0.2.0-alpha.1` 验收阶段。
+
+它只记录玩家实际打开过的容器，不扫描未访问区块、不发送自定义网络包，也不执行自动点击或搬运。
+
+## Alpha 安装
+
+要求：
+
+- Minecraft `1.21.1`
+- NeoForge `21.1.251` 或同一 1.21.1 分支的更高版本
+- Java 21
+
+将 `litemfinder-neoforge-1.21.1-0.2.0-alpha.1.jar` 放入客户端的 `mods` 目录即可；服务端不需要
+安装。当前 Alpha 没有正式搜索界面，使用下文的客户端调试命令检查索引。
+
+已支持的原版持久容器：
+
+- 单箱、双箱、陷阱箱、木桶、潜影盒、末影箱和玩家背包
+- 熔炉、高炉、烟熏炉、漏斗、酿造台、发射器、投掷器和合成器
+
+工作台、铁砧、村民交易和创造模式物品选择等临时或虚拟菜单不会写入长期索引。
+
+## 游戏内调试命令
+
+这些命令只在客户端执行：
+
+```text
+/litemfinder stats
+/litemfinder search <文本>
+/litemfinder exact <namespace:item>
+/litemfinder clear
+/litemfinder clear confirm
+```
+
+`clear` 本身只显示确认提示；只有完整输入 `clear confirm` 才会删除当前世界或服务器的索引。
+
+## 数据与卸载
+
+索引按世界或服务器隔离，存放于：
+
+```text
+<游戏目录>/config/litemfinder/index/<scope-hash>.db
+```
+
+文件名、容器 ID 和 metadata 不保存原始服务器地址或本地存档路径。若要卸载，先正常退出游戏，
+删除 `mods` 中的 LItemFinder JAR；若也要移除索引，再删除 `config/litemfinder` 目录。删除索引不可撤销。
 
 ## 当前结构
 
@@ -124,6 +169,17 @@ NeoForge 1.21.1 适配器 M1 已经包含：
 - 玩家、末影箱、方块、实体和会话级容器身份策略
 - 可独立测试的 1 tick 初始延迟、5 tick 变化防抖与按容器最新值合并
 - 资源重载和断线时清空、搜索线程无需访问游戏注册表的标签缓存
+
+NeoForge 1.21.1 适配器 M2-M4 已经包含：
+
+- Screen 打开/关闭与客户端 tick 驱动的稳定变化采集
+- 玩家物品栏常驻轻量指纹观察，拾取、丢弃、消耗、装备和耐久变化无需打开界面即可更新
+- 已索引方块容器在已加载区块中被破坏或替换后，会从内存索引和 SQLite 自动删除
+- 已知原版持久菜单的显式槽位边界，排除玩家背包和虚拟结果槽
+- 潜影盒递归快照、每世界/服务器独立 SQLite 数据库及重启恢复
+- 后台串行写入、按根容器合并和登出/关闭幂等排空
+- 统计、文本搜索、精确物品查询和带确认的当前 scope 清除命令
+- 被跳过菜单和会话级身份的诊断计数，普通采集日志保持安静
 
 Core v1 的完成范围和集成边界见 [docs/core-v1.md](docs/core-v1.md)。
 

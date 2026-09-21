@@ -2,12 +2,16 @@ package dev.litemfinder.neoforge;
 
 import com.mojang.logging.LogUtils;
 import dev.litemfinder.neoforge.capture.ClientMenuCaptureCoordinator;
+import dev.litemfinder.neoforge.capture.ClientPlayerInventoryCaptureCoordinator;
 import dev.litemfinder.neoforge.capture.MenuCaptureRequest;
 import dev.litemfinder.neoforge.capture.MenuFingerprintCalculator;
 import dev.litemfinder.neoforge.capture.RecentInteractionTracker;
 import dev.litemfinder.neoforge.capture.VanillaMenuSlotPartitioner;
+import dev.litemfinder.neoforge.command.ClientDebugCommands;
+import dev.litemfinder.neoforge.diagnostics.CaptureDiagnostics;
 import dev.litemfinder.neoforge.identity.MinecraftContainerIdentityResolver;
 import dev.litemfinder.neoforge.identity.MinecraftScopeResolver;
+import dev.litemfinder.neoforge.lifecycle.BlockContainerRemovalMonitor;
 import dev.litemfinder.neoforge.mapping.CachedItemTagResolver;
 import dev.litemfinder.neoforge.mapping.MenuSnapshotMapper;
 import dev.litemfinder.neoforge.persistence.SnapshotStorageCoordinator;
@@ -19,6 +23,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -38,22 +43,38 @@ public final class LItemFinderNeoForgeClient {
     private final CachedItemTagResolver itemTags = new CachedItemTagResolver();
     private final MenuSnapshotMapper snapshots = new MenuSnapshotMapper(itemTags);
     private final SnapshotStorageCoordinator storage;
+    private final CaptureDiagnostics diagnostics = new CaptureDiagnostics();
+    private final ClientDebugCommands commands;
     private final RecentInteractionTracker interactions;
     private final ClientMenuCaptureCoordinator captures;
+    private final ClientPlayerInventoryCaptureCoordinator playerInventoryCaptures;
+    private final BlockContainerRemovalMonitor removals;
 
     public LItemFinderNeoForgeClient(IEventBus modEventBus) {
         storage = new SnapshotStorageCoordinator(FMLPaths.CONFIGDIR.get().resolve("litemfinder/index"));
+        commands = new ClientDebugCommands(storage, itemTags, diagnostics);
         interactions = new RecentInteractionTracker(new MinecraftContainerIdentityResolver());
         captures = new ClientMenuCaptureCoordinator(
                 new MinecraftScopeResolver(),
                 interactions,
                 new VanillaMenuSlotPartitioner(true),
                 new MenuFingerprintCalculator(),
+                diagnostics,
                 this::storeCapture
         );
+        playerInventoryCaptures = new ClientPlayerInventoryCaptureCoordinator(
+                new MinecraftScopeResolver(),
+                new MinecraftContainerIdentityResolver(),
+                new VanillaMenuSlotPartitioner(true),
+                new MenuFingerprintCalculator(),
+                diagnostics,
+                this::storeCapture
+        );
+        removals = new BlockContainerRemovalMonitor(storage, new MinecraftScopeResolver(), diagnostics);
         modEventBus.addListener(this::registerReloadListeners);
         NeoForge.EVENT_BUS.addListener(this::onClientLogout);
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
+        NeoForge.EVENT_BUS.addListener(this::onRegisterClientCommands);
         NeoForge.EVENT_BUS.addListener(this::onScreenOpening);
         NeoForge.EVENT_BUS.addListener(this::onScreenClosing);
         NeoForge.EVENT_BUS.addListener(this::onRightClickBlock);
@@ -73,13 +94,24 @@ public final class LItemFinderNeoForgeClient {
     }
 
     private void onClientLogout(ClientPlayerNetworkEvent.LoggingOut event) {
+        playerInventoryCaptures.close();
+        captures.close();
         itemTags.clear();
         captures.reset();
+        playerInventoryCaptures.reset();
+        removals.reset();
         storage.leaveScope();
     }
 
     private void onClientTick(ClientTickEvent.Post event) {
-        captures.clientTick(Minecraft.getInstance());
+        Minecraft minecraft = Minecraft.getInstance();
+        captures.clientTick(minecraft);
+        playerInventoryCaptures.clientTick(minecraft);
+        removals.clientTick(minecraft);
+    }
+
+    private void onRegisterClientCommands(RegisterClientCommandsEvent event) {
+        commands.register(event);
     }
 
     private void onScreenOpening(ScreenEvent.Opening event) {
@@ -116,7 +148,7 @@ public final class LItemFinderNeoForgeClient {
         try {
             var snapshot = snapshots.map(request, minecraft.level.registryAccess(), Instant.now());
             var queued = storage.submit(snapshot, request.identity().persistable());
-            LOGGER.info(
+            LOGGER.debug(
                     "LItem Finder captured: reason={}, id={}, confidence={}, kind={}, slots={}, occupied={}, queued={}",
                     request.reason(),
                     request.identity().container().id(),
@@ -132,6 +164,8 @@ public final class LItemFinderNeoForgeClient {
     }
 
     private void onGameShuttingDown(GameShuttingDownEvent event) {
+        captures.close();
+        playerInventoryCaptures.close();
         storage.close();
     }
 }

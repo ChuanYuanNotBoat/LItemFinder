@@ -36,7 +36,7 @@ public final class InMemoryStorageIndex implements StorageIndex {
         synchronized (this) {
             ContainerId rootId = rootSnapshot.container().id();
             IndexedRoot existing = roots.get(rootId);
-            if (existing != null && rootSnapshot.capturedAt().isBefore(existing.capturedAt())) {
+            if (existing != null && rootSnapshot.capturedAt().isBefore(existing.snapshot().capturedAt())) {
                 return IndexUpdateResult.IGNORED_STALE;
             }
 
@@ -44,7 +44,7 @@ public final class InMemoryStorageIndex implements StorageIndex {
                 removeEntries(existing.entries());
             }
 
-            IndexedRoot replacement = new IndexedRoot(rootSnapshot.capturedAt(), newEntries);
+            IndexedRoot replacement = new IndexedRoot(rootSnapshot, newEntries);
             roots.put(rootId, replacement);
             addEntries(newEntries);
             return existing == null ? IndexUpdateResult.ADDED : IndexUpdateResult.REPLACED;
@@ -76,10 +76,15 @@ public final class InMemoryStorageIndex implements StorageIndex {
     }
 
     @Override
+    public synchronized List<InventorySnapshot> rootSnapshots() {
+        return roots.values().stream().map(IndexedRoot::snapshot).toList();
+    }
+
+    @Override
     public synchronized Optional<Instant> latestCaptureTime(ContainerId rootContainerId) {
         Objects.requireNonNull(rootContainerId, "rootContainerId must not be null");
         IndexedRoot root = roots.get(rootContainerId);
-        return root == null ? Optional.empty() : Optional.of(root.capturedAt());
+        return root == null ? Optional.empty() : Optional.of(root.snapshot().capturedAt());
     }
 
     @Override
@@ -107,10 +112,10 @@ public final class InMemoryStorageIndex implements StorageIndex {
         }
     }
 
-    private record IndexedRoot(Instant capturedAt, List<StorageEntry> entries) {
+    private record IndexedRoot(InventorySnapshot snapshot, List<StorageEntry> entries) {
 
         private IndexedRoot {
-            Objects.requireNonNull(capturedAt, "capturedAt must not be null");
+            Objects.requireNonNull(snapshot, "snapshot must not be null");
             entries = List.copyOf(Objects.requireNonNull(entries, "entries must not be null"));
         }
     }

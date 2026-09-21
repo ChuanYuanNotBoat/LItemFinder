@@ -33,6 +33,7 @@ class InMemoryStorageIndexTest {
         assertEquals(IndexUpdateResult.ADDED, index.update(snapshot(firstTime, DIAMOND, 12)));
         assertEquals(12, index.findExact(DIAMOND).getFirst().stack().count());
         assertEquals(1, index.rootContainerCount());
+        assertEquals(firstTime, index.rootSnapshots().getFirst().capturedAt());
 
         assertEquals(IndexUpdateResult.IGNORED_STALE, index.update(snapshot(firstTime.minusSeconds(1), IRON, 64)));
         assertTrue(index.findExact(IRON).isEmpty());
@@ -42,6 +43,7 @@ class InMemoryStorageIndexTest {
         assertTrue(index.findExact(DIAMOND).isEmpty());
         assertEquals(48, index.findExact(IRON).getFirst().stack().count());
         assertEquals(secondTime, index.latestCaptureTime(ROOT_ID).orElseThrow());
+        assertEquals(IRON, index.rootSnapshots().getFirst().slots().getFirst().stack().item());
 
         assertTrue(index.remove(ROOT_ID));
         assertFalse(index.remove(ROOT_ID));

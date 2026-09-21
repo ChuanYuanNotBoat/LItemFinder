@@ -73,13 +73,16 @@
 - 已锁定 NeoForge 21.1.251、ModDevGradle 2.0.147、Gradle 9.2.1、Java 21 基线。
 - M0 已完成：客户端专用入口、开发类路径、Jar-in-Jar 安装包和 SQLite native smoke 均已验证。
 - M1 已完成：ItemStack/标签/variant 映射、scope/容器身份和纯协调器均已实现。
-- 当前共有 46 项自动化测试；根 `clean check` 继续验证 Core 边界和全部模块。
-- 下一实现里程碑是 M2：菜单发现、槽位分区、内容指纹和只在变化时采集。
+- M2-M4 已完成：原版持久容器槽位分区、嵌套快照、分 scope SQLite、玩家物品栏常驻观察、
+  方块容器破坏删除和客户端调试命令均已实现并完成真实客户端验收。
+- 当前共有 67 项自动化测试；根 `check` 继续验证 Core 边界、全部模块和可安装 JAR 内容。
+- 当前里程碑是 M5：`0.2.0-alpha.1` 打包验收，以及常见模组容器探索性兼容测试。
 - 详细计划见 `docs/next-phase-neoforge-1.21.1.md`。
 
 ## 待确认的设计决策
 
 - 发布坐标和 Java 包名目前使用 `dev.litemfinder`，正式发布前仍可调整。
 - 首个目标已确定为 Minecraft 1.21.1 + NeoForge；Fabric 1.21.1 在适配边界稳定后跟进。
-- `ItemKey` 已预留不透明 `variant`；数据组件/NBT 的规范化与模糊匹配规则仍需在 Loader 接入前确定。
+- `ItemKey` 的 Minecraft 1.21.1 variant 已采用规范化持久 Data Components 的 SHA-256 指纹；
+  面向用户的模糊 variant 匹配仍待正式 UI 阶段确定。
 - SQLite 已确定使用独立 `storage-sqlite` 模块；历史快照保留和 schema 迁移策略仍待确定。

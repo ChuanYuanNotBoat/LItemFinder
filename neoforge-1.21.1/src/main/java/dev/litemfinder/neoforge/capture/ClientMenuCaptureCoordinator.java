@@ -1,13 +1,17 @@
 package dev.litemfinder.neoforge.capture;
 
 import com.mojang.logging.LogUtils;
+import dev.litemfinder.neoforge.diagnostics.CaptureDiagnostics;
 import dev.litemfinder.neoforge.identity.MinecraftScopeResolver;
+import dev.litemfinder.neoforge.identity.IdentityConfidence;
 import dev.litemfinder.neoforge.identity.ResolvedContainerIdentity;
 import dev.litemfinder.neoforge.lifecycle.DebouncedCapture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.InventoryMenu;
 import org.slf4j.Logger;
 
 import java.util.Objects;
@@ -25,6 +29,7 @@ public final class ClientMenuCaptureCoordinator {
     private final RecentInteractionTracker interactions;
     private final VanillaMenuSlotPartitioner partitions;
     private final MenuFingerprintCalculator fingerprints;
+    private final CaptureDiagnostics diagnostics;
     private final Consumer<MenuCaptureRequest> captureSink;
 
     private ActiveCapture active;
@@ -34,37 +39,48 @@ public final class ClientMenuCaptureCoordinator {
             RecentInteractionTracker interactions,
             VanillaMenuSlotPartitioner partitions,
             MenuFingerprintCalculator fingerprints,
+            CaptureDiagnostics diagnostics,
             Consumer<MenuCaptureRequest> captureSink
     ) {
         this.scopes = Objects.requireNonNull(scopes, "scopes must not be null");
         this.interactions = Objects.requireNonNull(interactions, "interactions must not be null");
         this.partitions = Objects.requireNonNull(partitions, "partitions must not be null");
         this.fingerprints = Objects.requireNonNull(fingerprints, "fingerprints must not be null");
+        this.diagnostics = Objects.requireNonNull(diagnostics, "diagnostics must not be null");
         this.captureSink = Objects.requireNonNull(captureSink, "captureSink must not be null");
     }
 
     public void screenOpened(Screen screen, Minecraft minecraft) {
         Objects.requireNonNull(screen, "screen must not be null");
         Objects.requireNonNull(minecraft, "minecraft must not be null");
-        active = null;
+        closeActive();
         if (!(screen instanceof AbstractContainerScreen<?> containerScreen) || minecraft.player == null) {
             return;
         }
 
         Optional<String> scope = scopes.resolve(minecraft);
         if (scope.isEmpty()) {
+            diagnostics.skipped("no_active_scope");
             LOGGER.debug("Skipping menu capture: no active world/server scope");
             return;
         }
 
         AbstractContainerMenu menu = containerScreen.getMenu();
+        if (menu instanceof InventoryMenu
+                || menu instanceof CreativeModeInventoryScreen.ItemPickerMenu) {
+            return;
+        }
         MenuPartition partition = partitions.partition(menu, minecraft.player.getInventory());
         if (!partition.supported()) {
+            diagnostics.skipped(partition.kind());
             LOGGER.debug("Skipping menu capture: {}", partition.kind());
             return;
         }
 
         ResolvedContainerIdentity identity = interactions.resolve(scope.orElseThrow(), minecraft.player, menu);
+        if (identity.confidence() == IdentityConfidence.SESSION_ONLY) {
+            diagnostics.degraded("session_only_identity:" + partition.kind());
+        }
         MenuFingerprint initial = fingerprints.calculate(menu, partition);
         DebouncedCapture<MenuFingerprint> debounce = new DebouncedCapture<>(
                 OPEN_DELAY_TICKS,
@@ -105,6 +121,10 @@ public final class ClientMenuCaptureCoordinator {
         interactions.clear();
     }
 
+    public void close() {
+        closeActive();
+    }
+
     private void closeActive() {
         ActiveCapture current = active;
         active = null;
@@ -120,6 +140,7 @@ public final class ClientMenuCaptureCoordinator {
     }
 
     private void emit(ActiveCapture current, MenuFingerprint fingerprint, CaptureReason reason) {
+        diagnostics.captured(reason);
         captureSink.accept(new MenuCaptureRequest(
                 current.identity(),
                 current.menu(),

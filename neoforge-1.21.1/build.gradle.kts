@@ -86,6 +86,7 @@ dependencies {
 
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("org.mockito:mockito-core:5.15.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly("org.xerial:sqlite-jdbc:$sqliteVersion")
 }
@@ -109,6 +110,44 @@ tasks.processResources {
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release = 21
+    options.compilerArgs.add("-Xlint:deprecation")
+}
+
+tasks.named<Jar>("jar") {
+    from(rootProject.file("LICENSE")) {
+        into("META-INF")
+        rename { "LICENSE-LITEMFINDER" }
+    }
+    from(rootProject.file("THIRD_PARTY_NOTICES.md")) {
+        into("META-INF")
+    }
+}
+
+val verifyReleaseJar by tasks.registering {
+    group = "verification"
+    description = "Verifies the installable JAR contains licenses and all runtime Jar-in-Jar dependencies."
+    dependsOn(tasks.named("jar"))
+    val installableJar = tasks.named<Jar>("jar").flatMap { it.archiveFile }
+    inputs.file(installableJar)
+    doLast {
+        val entries = mutableSetOf<String>()
+        zipTree(installableJar.get().asFile).visit {
+            if (!isDirectory) {
+                entries.add(relativePath.pathString)
+            }
+        }
+        val requiredEntries = listOf(
+                "META-INF/LICENSE-LITEMFINDER",
+                "META-INF/THIRD_PARTY_NOTICES.md",
+                "META-INF/jarjar/metadata.json"
+        )
+        requiredEntries.forEach { required ->
+            check(entries.any { it == required }) { "Missing release JAR entry: $required" }
+        }
+        check(entries.count { it.startsWith("META-INF/jarjar/") && it.endsWith(".jar") } == 3) {
+            "Expected exactly three nested runtime JARs (core, storage-sqlite, sqlite-jdbc)"
+        }
+    }
 }
 
 tasks.test {
@@ -116,5 +155,5 @@ tasks.test {
 }
 
 tasks.check {
-    dependsOn(tasks.jar)
+    dependsOn(verifyReleaseJar)
 }

@@ -19,6 +19,9 @@ public interface StorageIndex {
 
     List<StorageEntry> allEntries();
 
+    /** Immutable root snapshots retained by the index, including empty containers. */
+    List<InventorySnapshot> rootSnapshots();
+
     Optional<Instant> latestCaptureTime(ContainerId rootContainerId);
 
     int rootContainerCount();

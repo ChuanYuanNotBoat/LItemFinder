@@ -42,6 +42,21 @@ class ContainerIdentityFactoryTest {
     }
 
     @Test
+    void blockIdentityCanRetainExpectedMinecraftBlockForDestructionChecks() {
+        var resolved = ContainerIdentityFactory.block(
+                SCOPE,
+                NamespacedId.parse("minecraft:overworld"),
+                1,
+                2,
+                3,
+                NamespacedId.parse("minecraft:generic_9x3"),
+                NamespacedId.parse("minecraft:trapped_chest")
+        );
+
+        assertEquals("minecraft:trapped_chest", resolved.container().metadata().get("minecraftBlock"));
+    }
+
+    @Test
     void sessionFallbackIsExplicitlyNotPersistable() {
         var resolved = ContainerIdentityFactory.session(
                 SCOPE,

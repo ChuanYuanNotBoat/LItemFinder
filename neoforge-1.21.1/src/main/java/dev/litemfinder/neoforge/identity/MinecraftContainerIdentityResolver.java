@@ -39,7 +39,8 @@ public final class MinecraftContainerIdentityResolver {
                 position.getX(),
                 position.getY(),
                 position.getZ(),
-                MinecraftIds.toCore(BuiltInRegistries.MENU.getKey(menu.getType()))
+                MinecraftIds.toCore(BuiltInRegistries.MENU.getKey(menu.getType())),
+                MinecraftIds.toCore(BuiltInRegistries.BLOCK.getKey(level.getBlockState(position).getBlock()))
         );
     }
 
