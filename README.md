@@ -55,7 +55,7 @@ macOS / Linux：
 
 本项目使用 [GNU General Public License v3.0](LICENSE) 发布。
 
-## 下一阶段
+## 当前进度
 
 Core model 基础结构已经包含：
 
@@ -64,9 +64,16 @@ Core model 基础结构已经包含：
 - 不可变的 `InventorySnapshot`、槽位内容与嵌套容器
 - 用于索引结果的 `ContainerPath`
 
+Core index/search 基础结构已经包含：
+
+- 将递归容器快照展开为带完整路径的 `StorageEntry`
+- 可替换、可删除并防止旧快照倒灌的 `StorageIndex`
+- 用于测试和非持久会话的线程安全 `InMemoryStorageIndex`
+- 区分物品 variant、汇总总数量并稳定排序的精确搜索
+
 下一步：
 
-1. 定义索引仓储接口与 SQLite 实现边界。
-2. 定义查询语法和 `SearchEngine`，并用纯 Java 单元测试固定行为。
-3. 实现快照到索引条目的展开规则。
+1. 定义持久化仓储接口并决定 SQLite 是否拆分为独立模块。
+2. 增加名称、命名空间、数量和标签查询模型。
+3. 增加基于玩家位置的距离计算与结果排序。
 4. Core 稳定后，先选择一个 Loader 实现只读容器采集适配。

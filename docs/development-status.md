@@ -35,9 +35,17 @@
 - 已实现不可变容器快照、嵌套容器槽位和容器路径。
 - 已添加 JUnit 5 测试，覆盖标识校验、不可变性、槽位约束与嵌套快照。
 
+## Core Index/Search 实现状态
+
+- 已实现递归快照到 `StorageEntry` 的展开，保留根容器和完整嵌套路径。
+- 已定义 `StorageIndex`，并提供线程安全的 `InMemoryStorageIndex`。
+- 索引支持根快照替换、旧更新拒绝、根容器删除和精确物品查询。
+- 已定义 `SearchEngine`，支持精确查询、variant 隔离、数量汇总和稳定排序。
+- 集成测试已覆盖 10 个容器、100 种物品的纯 Java 场景。
+
 ## 待确认的设计决策
 
 - 发布坐标和 Java 包名目前使用 `dev.litemfinder`，正式发布前仍可调整。
 - 第一批支持的 Minecraft 版本和首个 Loader 尚未确定。
-- `ItemKey` 已预留不透明 `variant`；数据组件/NBT 的规范化与匹配规则仍需在索引层前确定。
+- `ItemKey` 已预留不透明 `variant`；数据组件/NBT 的规范化与模糊匹配规则仍需在 Loader 接入前确定。
 - SQLite 是直接作为 Core 的实现子包，还是拆为独立 `storage-sqlite` 模块，可在接口成形后决定。
