@@ -76,11 +76,12 @@
 - M2-M4 已完成：原版持久容器槽位分区、嵌套快照、分 scope SQLite、玩家物品栏常驻观察、
   方块容器破坏删除和客户端调试命令均已实现并完成真实客户端验收。
 - 已为 Phase 5 GUI/HUD 预留类型化客户端接口；搜索、物品全 variant 查询、统计和带结果的清理不再
-  依赖命令文本格式。库存总览、会话级获取数量草稿及显示设置已开始实现；容器地图和导航未实现。
+  依赖命令文本格式。库存总览、精确 variant 的会话获取计划、容器地图与显示设置已有首批实现。
 - 2026-09-23 已形成 [GUI 与可选导航架构草案](gui-navigation-architecture.md) 和
-  [分阶段实施计划](gui-navigation-implementation-plan.md)；总览的首批功能已实现，容器地图、世界通行缓存、
-  轨迹学习、跨维度与多交通方式寻路目前尚未实现。现有 `RoutePlanner` 仅对同维度容器按直线距离
-  生成最近邻取物停靠顺序。
+  [分阶段实施计划](gui-navigation-implementation-plan.md)。独立 `navigation-core` 已实现有界通行连接
+  缓存、局部 A*、多方式/跨维度拓扑 Dijkstra、轨迹时间证据与前置任务提案的纯 Java 原型；
+  Minecraft 世界观测、轨迹采集/持久化、导航 Mod 和实际路线接入尚未实现。现有库存 `RoutePlanner`
+  仍仅按同维度容器直线距离生成最近邻停靠顺序。
 - 根 `check` 继续验证 Core 边界、全部模块和可安装 JAR 内容。
 - 当前里程碑是 M5：`0.2.0-alpha.1` 打包验收，以及常见模组容器探索性兼容测试。
 - 详细计划见 `docs/next-phase-neoforge-1.21.1.md`。

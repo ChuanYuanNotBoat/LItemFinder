@@ -1,6 +1,6 @@
 package dev.litemfinder.neoforge.client.view;
 
-import dev.litemfinder.core.model.NamespacedId;
+import dev.litemfinder.core.model.ItemKey;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,11 +36,11 @@ class QuantityFormatTest {
     @Test
     void draftNeverExceedsLatestRecordedInventory() {
         AcquisitionDraft draft = new AcquisitionDraft();
-        NamespacedId item = NamespacedId.parse("minecraft:diamond");
+        ItemKey item = ItemKey.parse("minecraft:diamond");
         draft.set(item, 200, 128);
         assertEquals(128, draft.get(item));
         draft.reconcile(new InventoryOverview(java.util.List.of(
-                new InventoryOverview.ItemRow(item, java.util.List.of(
+                new InventoryOverview.ItemRow(item.itemId(), java.util.List.of(
                         new InventoryOverview.VariantRow(
                                 dev.litemfinder.core.model.ItemKey.parse("minecraft:diamond"), 64
                         )

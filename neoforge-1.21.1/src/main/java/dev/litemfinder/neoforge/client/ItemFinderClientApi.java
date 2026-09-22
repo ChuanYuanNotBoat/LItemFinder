@@ -2,10 +2,12 @@ package dev.litemfinder.neoforge.client;
 
 import dev.litemfinder.core.index.StorageEntry;
 import dev.litemfinder.core.model.NamespacedId;
+import dev.litemfinder.core.model.ItemKey;
 import dev.litemfinder.core.search.SearchQuery;
 import dev.litemfinder.core.search.SearchResponse;
 import dev.litemfinder.neoforge.client.view.InventoryOverview;
 import dev.litemfinder.neoforge.client.view.ContainerOverview;
+import dev.litemfinder.neoforge.client.view.AcquisitionPlan;
 
 import java.util.List;
 import java.util.Map;
@@ -26,6 +28,9 @@ public interface ItemFinderClientApi {
 
     /** All known root containers, including empty roots, for a future spatial map. */
     ContainerOverview containerOverview();
+
+    /** Recompute exact-variant source allocation against the current index. */
+    AcquisitionPlan plan(Map<ItemKey, Long> requests);
 
     /** Looks up every indexed variant of one Minecraft item ID. */
     ItemLookup findByItemId(NamespacedId itemId);

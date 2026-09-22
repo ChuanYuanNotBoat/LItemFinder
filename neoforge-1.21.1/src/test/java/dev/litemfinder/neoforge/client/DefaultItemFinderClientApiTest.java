@@ -72,6 +72,7 @@ class DefaultItemFinderClientApiTest {
                 .filter(row -> row.itemId().equals(potion.itemId()))
                 .findFirst().orElseThrow().totalCount());
         assertEquals(1, api.containerOverview().roots().size());
+        assertEquals(1, api.plan(java.util.Map.of(potion, 1L)).picks().size());
         assertEquals(3, search.totalCount());
         assertEquals(3, lookup.totalCount());
         assertEquals(2, lookup.variantCount());

@@ -2,11 +2,13 @@ package dev.litemfinder.neoforge.client;
 
 import dev.litemfinder.core.index.StorageEntry;
 import dev.litemfinder.core.model.NamespacedId;
+import dev.litemfinder.core.model.ItemKey;
 import dev.litemfinder.core.search.IndexedSearchEngine;
 import dev.litemfinder.core.search.SearchQuery;
 import dev.litemfinder.core.search.SearchResponse;
 import dev.litemfinder.neoforge.client.view.InventoryOverview;
 import dev.litemfinder.neoforge.client.view.ContainerOverview;
+import dev.litemfinder.neoforge.client.view.AcquisitionPlan;
 import dev.litemfinder.neoforge.diagnostics.CaptureDiagnostics;
 import dev.litemfinder.neoforge.mapping.CachedItemTagResolver;
 import dev.litemfinder.neoforge.persistence.SnapshotStorageCoordinator;
@@ -54,6 +56,11 @@ public final class DefaultItemFinderClientApi implements ItemFinderClientApi {
     @Override
     public ContainerOverview containerOverview() {
         return ContainerOverview.from(storage.currentIndex().rootSnapshots());
+    }
+
+    @Override
+    public AcquisitionPlan plan(Map<ItemKey, Long> requests) {
+        return AcquisitionPlan.allocate(search(SearchQuery.all()), requests);
     }
 
     @Override

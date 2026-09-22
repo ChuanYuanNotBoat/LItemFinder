@@ -1,6 +1,7 @@
 package dev.litemfinder.neoforge.client.gui;
 
 import dev.litemfinder.core.model.NamespacedId;
+import dev.litemfinder.core.model.ItemKey;
 import dev.litemfinder.neoforge.client.ItemFinderClientApi;
 import dev.litemfinder.neoforge.client.view.AcquisitionDraft;
 import dev.litemfinder.neoforge.client.view.InventoryOverview;
@@ -29,12 +30,13 @@ public final class InventoryOverviewScreen extends Screen {
     private static final int LIST_TOP = 55;
     private static final int FOOTER_HEIGHT = 27;
     private static final int ROW_HEIGHT = 24;
-    private static final int EDITOR_EXTRA_HEIGHT = 52;
+    private static final int EDITOR_EXTRA_HEIGHT = 70;
     private static final int MAX_SEARCH_CHARS = 120;
 
     private final ItemFinderClientApi api;
     private final AcquisitionDraft draft;
     private final Map<NamespacedId, ItemVisual> visualCache = new HashMap<>();
+    private final Map<NamespacedId, ItemKey> selectedVariants = new HashMap<>();
     private InventoryOverview overview = new InventoryOverview(List.of());
     private List<InventoryOverview.ItemRow> filteredRows = List.of();
     private List<UnitHit> unitHits = List.of();
@@ -43,6 +45,7 @@ public final class InventoryOverviewScreen extends Screen {
     private EditBox quantityBox;
     private Button minusButton;
     private Button plusButton;
+    private Button variantButton;
     private String searchText = "";
     private String notice = "";
     private int scroll;
@@ -75,6 +78,20 @@ public final class InventoryOverviewScreen extends Screen {
             }
         }).bounds(width - 120, 26, 108, 21).build());
 
+        addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.plan"), ignored -> {
+            commitQuantity();
+            if (minecraft != null) {
+                minecraft.setScreen(new AcquisitionPlanScreen(this, api, draft));
+            }
+        }).bounds(Math.max(12, width - 216), 3, 96, 20).build());
+
+        addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.map"), ignored -> {
+            commitQuantity();
+            if (minecraft != null) {
+                minecraft.setScreen(new ContainerMapScreen(this, api, draft, expanded));
+            }
+        }).bounds(Math.max(108, width - 320), 3, 96, 20).build());
+
         quantityBox = addRenderableWidget(new EditBox(font, 0, 0, 78, 19,
                 Component.translatable("gui.litemfinder.request")));
         quantityBox.setMaxLength(32);
@@ -84,6 +101,8 @@ public final class InventoryOverviewScreen extends Screen {
                 .bounds(0, 0, 20, 19).build());
         plusButton = addRenderableWidget(Button.builder(Component.literal("+"), ignored -> adjust(64))
                 .bounds(0, 0, 20, 19).build());
+        variantButton = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.variant"),
+                ignored -> cycleVariant()).bounds(0, 0, 150, 19).build());
 
         refreshOverview();
         layoutEditor();
@@ -163,19 +182,16 @@ public final class InventoryOverviewScreen extends Screen {
         graphics.fill(10, editorY, right, editorY + EDITOR_EXTRA_HEIGHT - 1, 0xFF243444);
         graphics.drawString(font, Component.translatable("gui.litemfinder.request"), 17,
                 editorY + 6, 0xFFE4EDF5);
-        graphics.drawString(font, Component.translatable("gui.litemfinder.cap", row.totalCount()),
+        InventoryOverview.VariantRow variant = selectedVariant(row);
+        graphics.drawString(font, Component.translatable("gui.litemfinder.cap", variant.count()),
                 17, editorY + 19, 0xFFB8C6D2);
-        if (row.variants().size() > 1) {
-            graphics.drawString(font, Component.translatable("gui.litemfinder.variant_pending"),
-                    17, editorY + 39, 0xFFFFC875);
-        }
 
-        long requested = draft.get(row.itemId());
+        long requested = draft.get(variant.item());
         int displayStackSize = Math.max(1, stackSize);
         QuantityFormat.Mode mode = stackSize > 0
                 ? ClientDisplayConfig.editorMode() : QuantityFormat.Mode.NUMBER;
-        int labelY = editorY + 36;
-        int labelX = row.variants().size() > 1 ? Math.max(170, width / 2) : 17;
+        int labelY = editorY + (row.variants().size() > 1 ? 56 : 38);
+        int labelX = 17;
         if (mode == QuantityFormat.Mode.BOX_STACK_ITEM) {
             long boxSize = QuantityFormat.unitStep(displayStackSize, QuantityFormat.Unit.BOX);
             long remainder = requested % boxSize;
@@ -226,7 +242,7 @@ public final class InventoryOverviewScreen extends Screen {
                     commitQuantity();
                     expanded = row.itemId().equals(expanded) ? null : row.itemId();
                     if (expanded != null) {
-                        quantityBox.setValue(Long.toString(draft.get(expanded)));
+                        quantityBox.setValue(Long.toString(draft.get(selectedVariant(row).item())));
                     }
                     clampScroll();
                     layoutEditor();
@@ -288,7 +304,7 @@ public final class InventoryOverviewScreen extends Screen {
     }
 
     private void refreshOverview() {
-        Map<NamespacedId, Long> before = draft.selections();
+        Map<ItemKey, Long> before = draft.selections();
         overview = api.overview();
         draft.reconcile(overview);
         if (!before.equals(draft.selections())) {
@@ -299,7 +315,10 @@ public final class InventoryOverviewScreen extends Screen {
             expanded = null;
         }
         if (expanded != null && quantityBox != null && !quantityBox.isFocused()) {
-            quantityBox.setValue(Long.toString(draft.get(expanded)));
+            InventoryOverview.ItemRow row = expandedRow();
+            if (row != null) {
+                quantityBox.setValue(Long.toString(draft.get(selectedVariant(row).item())));
+            }
         }
         clampScroll();
     }
@@ -319,8 +338,9 @@ public final class InventoryOverviewScreen extends Screen {
             return;
         }
         commitQuantity();
-        long next = QuantityFormat.adjust(draft.get(row.itemId()), delta, row.totalCount());
-        draft.set(row.itemId(), next, row.totalCount());
+        InventoryOverview.VariantRow variant = selectedVariant(row);
+        long next = QuantityFormat.adjust(draft.get(variant.item()), delta, variant.count());
+        draft.set(variant.item(), next, variant.count());
         quantityBox.setValue(Long.toString(next));
         notice = "";
     }
@@ -332,15 +352,16 @@ public final class InventoryOverviewScreen extends Screen {
         }
         String raw = quantityBox.getValue();
         try {
-            long bounded = QuantityFormat.parseClamped(raw, row.totalCount());
-            draft.set(row.itemId(), bounded, row.totalCount());
+            InventoryOverview.VariantRow variant = selectedVariant(row);
+            long bounded = QuantityFormat.parseClamped(raw, variant.count());
+            draft.set(variant.item(), bounded, variant.count());
             if (!raw.equals(Long.toString(bounded))) {
                 notice = Component.translatable("gui.litemfinder.notice.clamped").getString();
             }
         } catch (IllegalArgumentException exception) {
             notice = Component.translatable("gui.litemfinder.notice.integer").getString();
         }
-        quantityBox.setValue(Long.toString(draft.get(row.itemId())));
+        quantityBox.setValue(Long.toString(draft.get(selectedVariant(row).item())));
     }
 
     private InventoryOverview.ItemRow expandedRow() {
@@ -351,20 +372,23 @@ public final class InventoryOverviewScreen extends Screen {
     }
 
     private void layoutEditor() {
-        if (quantityBox == null || minusButton == null || plusButton == null) {
+        if (quantityBox == null || minusButton == null || plusButton == null || variantButton == null) {
             return;
         }
         quantityBox.visible = false;
         minusButton.visible = false;
         plusButton.visible = false;
+        variantButton.visible = false;
         int y = LIST_TOP - scroll;
         for (InventoryOverview.ItemRow row : filteredRows) {
             if (row.itemId().equals(expanded)) {
                 int editY = y + ROW_HEIGHT + 3;
-                boolean inView = editY >= LIST_TOP && editY + 19 <= listBottom();
+                boolean inView = editY >= LIST_TOP
+                        && editY + (row.variants().size() > 1 ? 50 : 19) <= listBottom();
                 quantityBox.visible = inView;
                 minusButton.visible = inView;
                 plusButton.visible = inView;
+                variantButton.visible = inView && row.variants().size() > 1;
                 if (inView) {
                     int x = Math.max(100, width - 134);
                     minusButton.setX(x - 26);
@@ -373,6 +397,17 @@ public final class InventoryOverviewScreen extends Screen {
                     quantityBox.setY(editY);
                     plusButton.setX(x + 83);
                     plusButton.setY(editY);
+                    variantButton.setX(17);
+                    variantButton.setY(editY + 31);
+                    if (row.variants().size() > 1) {
+                        InventoryOverview.VariantRow selected = selectedVariant(row);
+                        int index = row.variants().indexOf(selected) + 1;
+                        String variant = selected.item().variant();
+                        String suffix = variant.isEmpty() ? "default"
+                                : variant.substring(Math.max(0, variant.length() - 8));
+                        variantButton.setMessage(Component.translatable("gui.litemfinder.variant_index",
+                                index, row.variants().size(), suffix));
+                    }
                 }
                 break;
             }
@@ -410,6 +445,31 @@ public final class InventoryOverviewScreen extends Screen {
 
     private static String unitLabel(String unit) {
         return Component.translatable("gui.litemfinder.unit." + unit).getString();
+    }
+
+    private InventoryOverview.VariantRow selectedVariant(InventoryOverview.ItemRow row) {
+        ItemKey key = selectedVariants.get(row.itemId());
+        for (InventoryOverview.VariantRow variant : row.variants()) {
+            if (variant.item().equals(key)) {
+                return variant;
+            }
+        }
+        InventoryOverview.VariantRow first = row.variants().getFirst();
+        selectedVariants.put(row.itemId(), first.item());
+        return first;
+    }
+
+    private void cycleVariant() {
+        InventoryOverview.ItemRow row = expandedRow();
+        if (row == null || row.variants().size() < 2) {
+            return;
+        }
+        commitQuantity();
+        int index = row.variants().indexOf(selectedVariant(row));
+        ItemKey next = row.variants().get((index + 1) % row.variants().size()).item();
+        selectedVariants.put(row.itemId(), next);
+        quantityBox.setValue(Long.toString(draft.get(next)));
+        layoutEditor();
     }
 
     private record ItemVisual(ItemStack stack, String name, int stackSize) {

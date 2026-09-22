@@ -1,43 +1,54 @@
 package dev.litemfinder.neoforge.client.view;
 
-import dev.litemfinder.core.model.NamespacedId;
+import dev.litemfinder.core.model.ItemKey;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/** Session-only requested counts; source and variant allocation are a later phase. */
+/** Session-only requests keyed by exact variant. No slots are clicked or items moved. */
 public final class AcquisitionDraft {
 
-    private final Map<NamespacedId, Long> requested = new LinkedHashMap<>();
+    private final Map<ItemKey, Long> requested = new LinkedHashMap<>();
 
-    public long get(NamespacedId itemId) {
-        return requested.getOrDefault(Objects.requireNonNull(itemId), 0L);
+    public long get(ItemKey item) {
+        return requested.getOrDefault(Objects.requireNonNull(item), 0L);
     }
 
-    public void set(NamespacedId itemId, long count, long upperBound) {
-        Objects.requireNonNull(itemId, "itemId must not be null");
+    public void set(ItemKey item, long count, long upperBound) {
+        Objects.requireNonNull(item, "item must not be null");
         if (count < 0 || upperBound < 0) {
             throw new IllegalArgumentException("count and upperBound must be non-negative");
         }
         long bounded = Math.min(count, upperBound);
         if (bounded == 0) {
-            requested.remove(itemId);
+            requested.remove(item);
         } else {
-            requested.put(itemId, bounded);
+            requested.put(item, bounded);
         }
     }
 
+    /** Shrinks requests to the latest recorded totals; callers should surface any changed values. */
     public void reconcile(InventoryOverview overview) {
         Objects.requireNonNull(overview, "overview must not be null");
-        Map<NamespacedId, Long> available = new LinkedHashMap<>();
-        overview.rows().forEach(row -> available.put(row.itemId(), row.totalCount()));
+        Map<ItemKey, Long> available = new LinkedHashMap<>();
+        overview.rows().forEach(row -> row.variants().forEach(variant ->
+                available.put(variant.item(), variant.count())));
         requested.replaceAll((item, count) -> Math.min(count, available.getOrDefault(item, 0L)));
         requested.values().removeIf(count -> count == 0);
     }
 
-    public Map<NamespacedId, Long> selections() {
+    public Map<ItemKey, Long> selections() {
         return Map.copyOf(requested);
+    }
+
+    public long selectedFor(InventoryOverview.ItemRow row) {
+        Objects.requireNonNull(row, "row must not be null");
+        long total = 0;
+        for (InventoryOverview.VariantRow variant : row.variants()) {
+            total = Math.addExact(total, get(variant.item()));
+        }
+        return total;
     }
 
     public void clear() {
