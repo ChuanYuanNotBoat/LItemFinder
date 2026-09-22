@@ -2,15 +2,11 @@ package dev.litemfinder.neoforge.command;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
-import dev.litemfinder.core.index.StorageEntry;
 import dev.litemfinder.core.model.ItemKey;
 import dev.litemfinder.core.model.NamespacedId;
-import dev.litemfinder.core.search.IndexedSearchEngine;
 import dev.litemfinder.core.search.SearchQuery;
 import dev.litemfinder.core.search.SearchResult;
-import dev.litemfinder.neoforge.diagnostics.CaptureDiagnostics;
-import dev.litemfinder.neoforge.mapping.CachedItemTagResolver;
-import dev.litemfinder.neoforge.persistence.SnapshotStorageCoordinator;
+import dev.litemfinder.neoforge.client.ItemFinderClientApi;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -25,18 +21,10 @@ public final class ClientDebugCommands {
 
     private static final int DISPLAY_LIMIT = 10;
 
-    private final SnapshotStorageCoordinator storage;
-    private final CachedItemTagResolver tags;
-    private final CaptureDiagnostics diagnostics;
+    private final ItemFinderClientApi client;
 
-    public ClientDebugCommands(
-            SnapshotStorageCoordinator storage,
-            CachedItemTagResolver tags,
-            CaptureDiagnostics diagnostics
-    ) {
-        this.storage = Objects.requireNonNull(storage, "storage must not be null");
-        this.tags = Objects.requireNonNull(tags, "tags must not be null");
-        this.diagnostics = Objects.requireNonNull(diagnostics, "diagnostics must not be null");
+    public ClientDebugCommands(ItemFinderClientApi client) {
+        this.client = Objects.requireNonNull(client, "client must not be null");
     }
 
     public void register(RegisterClientCommandsEvent event) {
@@ -60,28 +48,26 @@ public final class ClientDebugCommands {
     }
 
     private int showStats(CommandContext<CommandSourceStack> context) {
-        var index = storage.currentIndex();
-        var capture = diagnostics.snapshot();
-        long variants = index.allEntries().stream().map(entry -> entry.stack().item()).distinct().count();
-        String message = "LItem Finder index: roots=" + index.rootContainerCount()
-                + ", entries=" + index.allEntries().size()
-                + ", variants=" + variants
-                + ", tagCache=" + tags.cachedItemCount()
-                + "\nCapture diagnostics: emitted=" + capture.totalCaptures()
-                + ", skipped=" + capture.totalSkipped()
-                + ", sessionOnly=" + capture.totalDegraded()
-                + ", removed=" + capture.totalRemoved()
-                + "\nSkipped reasons: " + formatCounters(capture.skipped())
-                + "\nSession-only reasons: " + formatCounters(capture.degraded())
-                + "\nRemoval reasons: " + formatCounters(capture.removed());
+        var status = client.status();
+        var capture = status.capture();
+        String message = "LItem Finder index: roots=" + status.rootContainers()
+                + ", entries=" + status.entries()
+                + ", variants=" + status.variants()
+                + ", tagCache=" + status.cachedTagItems()
+                + "\nCapture diagnostics: emitted=" + capture.captured()
+                + ", skipped=" + capture.skipped()
+                + ", sessionOnly=" + capture.sessionOnly()
+                + ", removed=" + capture.removed()
+                + "\nSkipped reasons: " + formatCounters(capture.skippedReasons())
+                + "\nSession-only reasons: " + formatCounters(capture.sessionOnlyReasons())
+                + "\nRemoval reasons: " + formatCounters(capture.removalReasons());
         reply(context.getSource(), message);
         return 1;
     }
 
     private int search(CommandContext<CommandSourceStack> context) {
         String text = StringArgumentType.getString(context, "text");
-        var response = new IndexedSearchEngine(storage.currentIndex(), tags)
-                .search(SearchQuery.all().withText(text));
+        var response = client.search(SearchQuery.all().withText(text));
         if (response.isEmpty()) {
             reply(context.getSource(), "No indexed items match: " + text);
             return 0;
@@ -100,19 +86,14 @@ public final class ClientDebugCommands {
             return 0;
         }
 
-        List<StorageEntry> entries = storage.currentIndex().allEntries().stream()
-                .filter(entry -> entry.stack().item().itemId().equals(itemId))
-                .toList();
-        if (entries.isEmpty()) {
+        var result = client.findByItemId(itemId);
+        if (result.isEmpty()) {
             reply(context.getSource(), "No indexed stacks for " + itemId);
             return 0;
         }
-        long count = entries.stream().mapToLong(entry -> entry.stack().count()).sum();
-        long variants = entries.stream().map(entry -> entry.stack().item()).distinct().count();
-        long roots = entries.stream().map(entry -> entry.rootContainer().id()).distinct().count();
-        reply(context.getSource(), itemId + ": count=" + count + ", stacks=" + entries.size()
-                + ", variants=" + variants + ", roots=" + roots);
-        return entries.size();
+        reply(context.getSource(), itemId + ": count=" + result.totalCount() + ", stacks=" + result.entries().size()
+                + ", variants=" + result.variantCount() + ", roots=" + result.rootContainerCount());
+        return result.entries().size();
     }
 
     private int showClearConfirmation(CommandContext<CommandSourceStack> context) {
@@ -121,13 +102,13 @@ public final class ClientDebugCommands {
     }
 
     private int clearCurrentScope(CommandContext<CommandSourceStack> context) {
-        int deleted = storage.clearCurrentScopeData();
-        if (deleted < 0) {
+        var result = client.clearCurrentScopeData();
+        if (!result.successful()) {
             context.getSource().sendFailure(Component.literal("Could not clear the index; see the log for details."));
             return 0;
         }
-        diagnostics.clear();
-        reply(context.getSource(), "Cleared current scope index (" + deleted + " persisted root snapshots).");
+        reply(context.getSource(), "Cleared current scope index (" + result.deletedRootSnapshots()
+                + " persisted root snapshots).");
         return 1;
     }
 

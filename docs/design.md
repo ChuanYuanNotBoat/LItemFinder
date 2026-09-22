@@ -751,6 +751,7 @@ NeoForge 1.21.1：
 
 NeoForge 客户端体验：
 
+- 类型化客户端查询接口（已预留，正式 GUI 设计前不固化展示模型）
 - Search UI
 - HUD / Route Render
 - 分组与诊断界面

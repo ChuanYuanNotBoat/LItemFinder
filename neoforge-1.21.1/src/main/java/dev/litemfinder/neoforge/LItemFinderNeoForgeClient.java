@@ -7,6 +7,8 @@ import dev.litemfinder.neoforge.capture.MenuCaptureRequest;
 import dev.litemfinder.neoforge.capture.MenuFingerprintCalculator;
 import dev.litemfinder.neoforge.capture.RecentInteractionTracker;
 import dev.litemfinder.neoforge.capture.VanillaMenuSlotPartitioner;
+import dev.litemfinder.neoforge.client.DefaultItemFinderClientApi;
+import dev.litemfinder.neoforge.client.ItemFinderClientApi;
 import dev.litemfinder.neoforge.command.ClientDebugCommands;
 import dev.litemfinder.neoforge.diagnostics.CaptureDiagnostics;
 import dev.litemfinder.neoforge.identity.MinecraftContainerIdentityResolver;
@@ -44,6 +46,7 @@ public final class LItemFinderNeoForgeClient {
     private final MenuSnapshotMapper snapshots = new MenuSnapshotMapper(itemTags);
     private final SnapshotStorageCoordinator storage;
     private final CaptureDiagnostics diagnostics = new CaptureDiagnostics();
+    private final ItemFinderClientApi clientApi;
     private final ClientDebugCommands commands;
     private final RecentInteractionTracker interactions;
     private final ClientMenuCaptureCoordinator captures;
@@ -52,7 +55,8 @@ public final class LItemFinderNeoForgeClient {
 
     public LItemFinderNeoForgeClient(IEventBus modEventBus) {
         storage = new SnapshotStorageCoordinator(FMLPaths.CONFIGDIR.get().resolve("litemfinder/index"));
-        commands = new ClientDebugCommands(storage, itemTags, diagnostics);
+        clientApi = new DefaultItemFinderClientApi(storage, itemTags, diagnostics);
+        commands = new ClientDebugCommands(clientApi);
         interactions = new RecentInteractionTracker(new MinecraftContainerIdentityResolver());
         captures = new ClientMenuCaptureCoordinator(
                 new MinecraftScopeResolver(),
