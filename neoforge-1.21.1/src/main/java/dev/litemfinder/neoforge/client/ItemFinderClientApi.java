@@ -4,6 +4,8 @@ import dev.litemfinder.core.index.StorageEntry;
 import dev.litemfinder.core.model.NamespacedId;
 import dev.litemfinder.core.search.SearchQuery;
 import dev.litemfinder.core.search.SearchResponse;
+import dev.litemfinder.neoforge.client.view.InventoryOverview;
+import dev.litemfinder.neoforge.client.view.ContainerOverview;
 
 import java.util.List;
 import java.util.Map;
@@ -18,6 +20,12 @@ import java.util.Objects;
 public interface ItemFinderClientApi {
 
     SearchResponse search(SearchQuery query);
+
+    /** All indexed items grouped for the compact inventory overview. */
+    InventoryOverview overview();
+
+    /** All known root containers, including empty roots, for a future spatial map. */
+    ContainerOverview containerOverview();
 
     /** Looks up every indexed variant of one Minecraft item ID. */
     ItemLookup findByItemId(NamespacedId itemId);

@@ -5,6 +5,11 @@
 
 # LItem Finder Design Document
 
+> 2026-09-23 补充：GUI、容器地图与可选独立导航的具体提案见
+> [GUI 与导航架构](gui-navigation-architecture.md)；分阶段退出条件见
+> [实施计划](gui-navigation-implementation-plan.md)。下文的 `RoutePlanner` 仍指现有同维度、
+> 直线距离最近邻的取物停靠排序，不代表地形寻路或跨维度导航。
+
 ## 1. 项目目标
 
 LItem Finder 旨在提供一个跨 Minecraft 客户端平台的智能仓库管理系统。
@@ -529,6 +534,10 @@ Mineral Chest
 
 用于获取资源。
 
+本节是早期目标描述。当前实现仅按同 scope、同维度的容器直线距离做最近邻停靠排序，并报告缺货；
+打开次数、操作次数与实际通行时间尚未进入代价函数。可选导航提案见
+[GUI 与导航架构](gui-navigation-architecture.md)。
+
 ## 输入
 
 需求：
@@ -733,7 +742,7 @@ Planner:
 
 ---
 
-## Phase 4（下一阶段）
+## Phase 4（M0-M4 已完成，M5 Alpha 验收中）
 
 NeoForge 1.21.1：
 
@@ -751,10 +760,15 @@ NeoForge 1.21.1：
 
 NeoForge 客户端体验：
 
-- 类型化客户端查询接口（已预留，正式 GUI 设计前不固化展示模型）
-- Search UI
-- HUD / Route Render
-- 分组与诊断界面
+- 类型化客户端查询接口与库存/根容器摘要（已实现首批）
+- 紧凑库存总览、数量编辑与会话草稿（已实现首批）；来源分配和正式获取计划待实施
+- 全屏容器地图和局部 3D Y 层视图
+- 搜索、设置、分组与诊断界面
+- 可选导航服务接入后的路线渲染
+
+具体架构和阶段验收见 [GUI 与导航架构](gui-navigation-architecture.md) 与
+[实施计划](gui-navigation-implementation-plan.md)。导航按可独立模块/Mod 设计，不属于库存功能的
+运行硬依赖。
 
 ---
 
@@ -795,7 +809,7 @@ Forge 1.20.1 与其他历史热门版本。
 
 ---
 
-# 当前第一开发任务
+# 已完成的 Core Model 起始任务
 
 > 实现 Core Model 层。
 

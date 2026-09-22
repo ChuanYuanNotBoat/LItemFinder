@@ -5,6 +5,8 @@ import dev.litemfinder.core.model.NamespacedId;
 import dev.litemfinder.core.search.IndexedSearchEngine;
 import dev.litemfinder.core.search.SearchQuery;
 import dev.litemfinder.core.search.SearchResponse;
+import dev.litemfinder.neoforge.client.view.InventoryOverview;
+import dev.litemfinder.neoforge.client.view.ContainerOverview;
 import dev.litemfinder.neoforge.diagnostics.CaptureDiagnostics;
 import dev.litemfinder.neoforge.mapping.CachedItemTagResolver;
 import dev.litemfinder.neoforge.persistence.SnapshotStorageCoordinator;
@@ -42,6 +44,16 @@ public final class DefaultItemFinderClientApi implements ItemFinderClientApi {
     public SearchResponse search(SearchQuery query) {
         Objects.requireNonNull(query, "query must not be null");
         return new IndexedSearchEngine(storage.currentIndex(), tags).search(query);
+    }
+
+    @Override
+    public InventoryOverview overview() {
+        return InventoryOverview.from(search(SearchQuery.all()));
+    }
+
+    @Override
+    public ContainerOverview containerOverview() {
+        return ContainerOverview.from(storage.currentIndex().rootSnapshots());
     }
 
     @Override

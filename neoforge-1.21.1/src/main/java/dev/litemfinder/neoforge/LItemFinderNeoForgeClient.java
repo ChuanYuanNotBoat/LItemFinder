@@ -1,6 +1,7 @@
 package dev.litemfinder.neoforge;
 
 import com.mojang.logging.LogUtils;
+import com.mojang.blaze3d.platform.InputConstants;
 import dev.litemfinder.neoforge.capture.ClientMenuCaptureCoordinator;
 import dev.litemfinder.neoforge.capture.ClientPlayerInventoryCaptureCoordinator;
 import dev.litemfinder.neoforge.capture.MenuCaptureRequest;
@@ -9,6 +10,9 @@ import dev.litemfinder.neoforge.capture.RecentInteractionTracker;
 import dev.litemfinder.neoforge.capture.VanillaMenuSlotPartitioner;
 import dev.litemfinder.neoforge.client.DefaultItemFinderClientApi;
 import dev.litemfinder.neoforge.client.ItemFinderClientApi;
+import dev.litemfinder.neoforge.client.gui.ClientDisplayConfig;
+import dev.litemfinder.neoforge.client.gui.InventoryOverviewScreen;
+import dev.litemfinder.neoforge.client.view.AcquisitionDraft;
 import dev.litemfinder.neoforge.command.ClientDebugCommands;
 import dev.litemfinder.neoforge.diagnostics.CaptureDiagnostics;
 import dev.litemfinder.neoforge.identity.MinecraftContainerIdentityResolver;
@@ -18,6 +22,9 @@ import dev.litemfinder.neoforge.mapping.CachedItemTagResolver;
 import dev.litemfinder.neoforge.mapping.MenuSnapshotMapper;
 import dev.litemfinder.neoforge.persistence.SnapshotStorageCoordinator;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.KeyMapping;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.config.ModConfig;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -26,12 +33,15 @@ import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
+import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.client.settings.KeyConflictContext;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.GameShuttingDownEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import org.slf4j.Logger;
+import org.lwjgl.glfw.GLFW;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -42,21 +52,31 @@ public final class LItemFinderNeoForgeClient {
 
     public static final String MOD_ID = "litemfinder";
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final KeyMapping OPEN_OVERVIEW = new KeyMapping(
+            "key.litemfinder.open_overview",
+            KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_O,
+            "key.categories.litemfinder"
+    );
     private final CachedItemTagResolver itemTags = new CachedItemTagResolver();
     private final MenuSnapshotMapper snapshots = new MenuSnapshotMapper(itemTags);
     private final SnapshotStorageCoordinator storage;
     private final CaptureDiagnostics diagnostics = new CaptureDiagnostics();
     private final ItemFinderClientApi clientApi;
+    private final AcquisitionDraft acquisitionDraft = new AcquisitionDraft();
     private final ClientDebugCommands commands;
     private final RecentInteractionTracker interactions;
     private final ClientMenuCaptureCoordinator captures;
     private final ClientPlayerInventoryCaptureCoordinator playerInventoryCaptures;
     private final BlockContainerRemovalMonitor removals;
+    private boolean openOverviewRequested;
 
-    public LItemFinderNeoForgeClient(IEventBus modEventBus) {
+    public LItemFinderNeoForgeClient(IEventBus modEventBus, ModContainer container) {
+        container.registerConfig(ModConfig.Type.CLIENT, ClientDisplayConfig.SPEC);
         storage = new SnapshotStorageCoordinator(FMLPaths.CONFIGDIR.get().resolve("litemfinder/index"));
         clientApi = new DefaultItemFinderClientApi(storage, itemTags, diagnostics);
-        commands = new ClientDebugCommands(clientApi);
+        commands = new ClientDebugCommands(clientApi, this::requestOverview);
         interactions = new RecentInteractionTracker(new MinecraftContainerIdentityResolver());
         captures = new ClientMenuCaptureCoordinator(
                 new MinecraftScopeResolver(),
@@ -76,6 +96,7 @@ public final class LItemFinderNeoForgeClient {
         );
         removals = new BlockContainerRemovalMonitor(storage, new MinecraftScopeResolver(), diagnostics);
         modEventBus.addListener(this::registerReloadListeners);
+        modEventBus.addListener(this::registerKeyMappings);
         NeoForge.EVENT_BUS.addListener(this::onClientLogout);
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
         NeoForge.EVENT_BUS.addListener(this::onRegisterClientCommands);
@@ -97,6 +118,10 @@ public final class LItemFinderNeoForgeClient {
         event.registerReloadListener((ResourceManagerReloadListener) ignored -> itemTags.clear());
     }
 
+    private void registerKeyMappings(RegisterKeyMappingsEvent event) {
+        event.register(OPEN_OVERVIEW);
+    }
+
     private void onClientLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         playerInventoryCaptures.close();
         captures.close();
@@ -104,14 +129,27 @@ public final class LItemFinderNeoForgeClient {
         captures.reset();
         playerInventoryCaptures.reset();
         removals.reset();
+        acquisitionDraft.clear();
+        openOverviewRequested = false;
         storage.leaveScope();
     }
 
     private void onClientTick(ClientTickEvent.Post event) {
         Minecraft minecraft = Minecraft.getInstance();
+        while (OPEN_OVERVIEW.consumeClick()) {
+            requestOverview();
+        }
         captures.clientTick(minecraft);
         playerInventoryCaptures.clientTick(minecraft);
         removals.clientTick(minecraft);
+        if (openOverviewRequested && minecraft.player != null && minecraft.screen == null) {
+            openOverviewRequested = false;
+            minecraft.setScreen(new InventoryOverviewScreen(clientApi, acquisitionDraft));
+        }
+    }
+
+    private void requestOverview() {
+        openOverviewRequested = true;
     }
 
     private void onRegisterClientCommands(RegisterClientCommandsEvent event) {

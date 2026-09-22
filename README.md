@@ -16,8 +16,8 @@ NeoForge 1.21.1 只读采集适配器已进入 `0.2.0-alpha.1` 验收阶段。
 - Java 21
 
 将 `litemfinder-neoforge-1.21.1-0.2.0-alpha.1.jar` 放入客户端的 `mods` 目录即可；服务端不需要
-安装。当前 Alpha 已预留 GUI/HUD 使用的类型化客户端查询接口，但正式面板仍在设计中；现阶段使用
-下文的客户端调试命令检查索引。
+安装。当前开发版已有库存总览与会话级获取数量草稿；按 `O`（可在按键设置中改绑）或输入
+`/litemfinder gui` 打开。容器地图、精确 variant 来源分配和实际导航仍在后续阶段。
 
 已支持的原版持久容器：
 
@@ -32,6 +32,7 @@ NeoForge 1.21.1 只读采集适配器已进入 `0.2.0-alpha.1` 验收阶段。
 
 ```text
 /litemfinder stats
+/litemfinder gui
 /litemfinder search <文本>
 /litemfinder exact <namespace:item>
 /litemfinder clear
@@ -183,6 +184,14 @@ NeoForge 1.21.1 适配器 M2-M4 已经包含：
 - 与命令输出解耦的客户端查询/状态/清理接口，供后续 GUI 面板和 HUD 直接复用
 - 被跳过菜单和会话级身份的诊断计数，普通采集日志保持安静
 
+Phase 5 首批客户端界面已经包含：
+
+- 按已记录总数降序的紧凑库存总览，物品行点击后展开纯整数获取数量编辑
+- 默认 `±64`、盒/组/个滚轮、库存数量上限与设置页中的数量显示模式
+- 包含空容器的只读根容器摘要查询，为后续容器地图准备数据边界
+
+当前获取数量仅保存在本次游戏会话的草稿中；不同 variant 的来源分配、地图和实际导航尚未实现。
+
 Core v1 的完成范围和集成边界见 [docs/core-v1.md](docs/core-v1.md)。
 
 当前平台阶段的完整计划见
@@ -190,5 +199,10 @@ Core v1 的完成范围和集成边界见 [docs/core-v1.md](docs/core-v1.md)。
 
 1. NeoForge 1.21.1 只读容器采集、SQLite 接入与 Alpha 打包。
 2. 将游戏标签与组件数据规范化为 Core 的标签和 variant。
-3. 实现搜索 UI、HUD 和路线显示。
-4. 最后再接入 Meteor/Baritone 执行 `MoveTask` 和 `RoutePlan`。
+3. 实现库存总览、获取计划和容器地图；路线显示由可选导航服务接入。
+4. Meteor/Baritone 自动执行属于后续独立阶段，需在任务与路线能力稳定后评估。
+
+后续 GUI、容器地图与可选独立导航的设计及分阶段验收见
+[GUI 与导航架构](docs/gui-navigation-architecture.md) 和
+[实施计划](docs/gui-navigation-implementation-plan.md)。总览的首批功能已实现，地图与导航仍是提案；
+现有路线规划只按同维度容器直线距离安排取物停靠点，不提供实际可通行路径。

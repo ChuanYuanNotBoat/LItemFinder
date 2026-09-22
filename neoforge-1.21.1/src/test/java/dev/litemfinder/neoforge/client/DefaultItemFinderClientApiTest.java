@@ -62,10 +62,16 @@ class DefaultItemFinderClientApiTest {
         );
 
         var search = api.search(SearchQuery.all().withText("potion"));
+        var overview = api.overview();
         var lookup = api.findByItemId(NamespacedId.parse("minecraft:potion"));
         var status = api.status();
 
         assertEquals(2, search.results().size());
+        assertEquals(2, overview.rows().size());
+        assertEquals(3, overview.rows().stream()
+                .filter(row -> row.itemId().equals(potion.itemId()))
+                .findFirst().orElseThrow().totalCount());
+        assertEquals(1, api.containerOverview().roots().size());
         assertEquals(3, search.totalCount());
         assertEquals(3, lookup.totalCount());
         assertEquals(2, lookup.variantCount());

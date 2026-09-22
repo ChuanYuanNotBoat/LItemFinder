@@ -22,14 +22,17 @@ public final class ClientDebugCommands {
     private static final int DISPLAY_LIMIT = 10;
 
     private final ItemFinderClientApi client;
+    private final Runnable openOverview;
 
-    public ClientDebugCommands(ItemFinderClientApi client) {
+    public ClientDebugCommands(ItemFinderClientApi client, Runnable openOverview) {
         this.client = Objects.requireNonNull(client, "client must not be null");
+        this.openOverview = Objects.requireNonNull(openOverview, "openOverview must not be null");
     }
 
     public void register(RegisterClientCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("litemfinder")
                 .executes(this::showHelp)
+                .then(Commands.literal("gui").executes(this::openGui))
                 .then(Commands.literal("stats").executes(this::showStats))
                 .then(Commands.literal("search")
                         .then(Commands.argument("text", StringArgumentType.greedyString())
@@ -43,7 +46,12 @@ public final class ClientDebugCommands {
     }
 
     private int showHelp(CommandContext<CommandSourceStack> context) {
-        reply(context.getSource(), "LItem Finder: /litemfinder stats | search <text> | exact <namespace:item> | clear confirm");
+        reply(context.getSource(), "LItem Finder: /litemfinder gui | stats | search <text> | exact <namespace:item> | clear confirm");
+        return 1;
+    }
+
+    private int openGui(CommandContext<CommandSourceStack> context) {
+        openOverview.run();
         return 1;
     }
 
