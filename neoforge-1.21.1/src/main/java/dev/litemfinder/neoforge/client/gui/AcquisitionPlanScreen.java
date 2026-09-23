@@ -57,6 +57,7 @@ public final class AcquisitionPlanScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0xF0121921);
         graphics.fill(0, 0, width, 42, 0xFF1C2834);
         graphics.drawString(font, title, 12, 17, 0xFFF2F4F6);
@@ -75,6 +76,11 @@ public final class AcquisitionPlanScreen extends Screen {
         }
         graphics.disableScissor();
         super.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Prevent Screen.render from blurring this screen's custom text a second time.
     }
 
     @Override

@@ -118,6 +118,7 @@ public final class InventoryOverviewScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0xF0121921);
         graphics.fill(0, 0, width, 51, 0xFF1C2834);
         graphics.drawString(font, title, 12, 9, 0xFFF2F4F6);
@@ -147,6 +148,11 @@ public final class InventoryOverviewScreen extends Screen {
 
         layoutEditor();
         super.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Screen.render invokes this before widgets; the background was already drawn above.
     }
 
     private void renderRow(GuiGraphics graphics, InventoryOverview.ItemRow row, int y,

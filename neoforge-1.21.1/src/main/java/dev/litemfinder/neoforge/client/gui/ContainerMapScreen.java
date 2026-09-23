@@ -113,6 +113,7 @@ public final class ContainerMapScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0xF0101720);
         graphics.fill(0, 0, width, HEADER, 0xFF1C2834);
         graphics.drawString(font, title, 12, 8, 0xFFF2F4F6);
@@ -138,6 +139,11 @@ public final class ContainerMapScreen extends Screen {
         graphics.drawString(font, font.plainSubstrByWidth(footer, width - 24), 12,
                 height - 18, 0xFFB8C6D2);
         super.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // The background was rendered before the map; super.render only needs to draw widgets.
     }
 
     private void renderGrid(GuiGraphics graphics) {

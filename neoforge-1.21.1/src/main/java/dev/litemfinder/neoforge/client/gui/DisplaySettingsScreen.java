@@ -38,11 +38,17 @@ public final class DisplaySettingsScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0xF0111720);
         graphics.drawCenteredString(font, title, width / 2, Math.max(16, height / 2 - 78), 0xFFFFFF);
         graphics.drawCenteredString(font, Component.translatable("gui.litemfinder.settings.hint"),
                 width / 2, Math.min(height - 22, height / 2 + 62), 0xA8B8C8);
         super.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Background blur is applied at the start of render, before custom text and widgets.
     }
 
     @Override
