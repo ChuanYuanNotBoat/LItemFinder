@@ -1,6 +1,7 @@
 .gradle/
 build/
 **/build/
+**/bin/
 **/run/
 **/run-packaged/
 
