@@ -22,6 +22,7 @@ import java.util.Objects;
 public final class AcquisitionPlanScreen extends Screen {
 
     private static final Duration STALE_HINT_AFTER = Duration.ofMinutes(30);
+    private static final int STALE_INDICATOR_SIZE = 11;
 
     private final Screen parent;
     private final ItemFinderClientApi api;
@@ -67,15 +68,28 @@ public final class AcquisitionPlanScreen extends Screen {
         }
         graphics.enableScissor(8, 45, width - 8, height - 26);
         int y = 48 - scroll;
+        Component hoveredTooltip = null;
         for (Line line : lines) {
             if (y + 15 >= 45 && y <= height - 26) {
-                graphics.drawString(font, font.plainSubstrByWidth(line.text(), width - 27),
+                int indicatorX = width - 23;
+                int textWidth = line.tooltip() == null ? width - 27 : Math.max(30, indicatorX - 19);
+                graphics.drawString(font, font.plainSubstrByWidth(line.text(), textWidth),
                         14, y, line.color());
+                if (line.tooltip() != null) {
+                    renderStaleIndicator(graphics, indicatorX, y - 1);
+                    if (contains(mouseX, mouseY, indicatorX, y - 1,
+                            indicatorX + STALE_INDICATOR_SIZE, y - 1 + STALE_INDICATOR_SIZE)) {
+                        hoveredTooltip = line.tooltip();
+                    }
+                }
             }
             y += 17;
         }
         graphics.disableScissor();
         super.render(graphics, mouseX, mouseY, partialTick);
+        if (hoveredTooltip != null) {
+            graphics.renderTooltip(font, hoveredTooltip, mouseX, mouseY);
+        }
     }
 
     @Override
@@ -109,30 +123,42 @@ public final class AcquisitionPlanScreen extends Screen {
         plan = latest;
         List<Line> result = new ArrayList<>();
         if (draft.selections().isEmpty()) {
-            result.add(new Line(Component.translatable("gui.litemfinder.plan.empty").getString(), 0xFFB8C6D2));
+            result.add(new Line(Component.translatable("gui.litemfinder.plan.empty").getString(),
+                    0xFFB8C6D2, null));
         } else {
             draft.selections().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(request -> {
                 ItemKey item = request.getKey();
-                result.add(new Line(itemLabel(item) + " ×" + request.getValue(), 0xFFF2F4F6));
+                result.add(new Line(itemLabel(item) + " ×" + request.getValue(), 0xFFF2F4F6, null));
                 plan.picks().stream().filter(pick -> pick.item().equals(item)).forEach(pick -> {
                     boolean oldSnapshot = pick.source().observedAt()
                             .isBefore(Instant.now().minus(STALE_HINT_AFTER));
+                    Component staleTooltip = oldSnapshot
+                            ? Component.translatable("gui.litemfinder.plan.stale",
+                            SnapshotTimeFormatter.format(pick.source().observedAt())) : null;
                     result.add(new Line("  ← " + sourceLabel(pick.source()) + " ×" + pick.count(),
-                            oldSnapshot ? 0xFFFFC875 : 0xFFB9E3B7));
-                    if (oldSnapshot) {
-                        result.add(new Line("    " + Component.translatable("gui.litemfinder.plan.stale",
-                                pick.source().observedAt()).getString(), 0xFFFFC875));
-                    }
+                            0xFFB9E3B7, staleTooltip));
                 });
                 long missing = plan.missing().getOrDefault(item, 0L);
                 if (missing > 0) {
                     result.add(new Line("  " + Component.translatable("gui.litemfinder.plan.missing", missing)
-                            .getString(), 0xFFFFC875));
+                            .getString(), 0xFFFFC875, null));
                 }
-                result.add(new Line("", 0xFFFFFFFF));
+                result.add(new Line("", 0xFFFFFFFF, null));
             });
         }
         lines = List.copyOf(result);
+    }
+
+    private void renderStaleIndicator(GuiGraphics graphics, int x, int y) {
+        graphics.fill(x, y, x + STALE_INDICATOR_SIZE, y + STALE_INDICATOR_SIZE, 0xFFFFC875);
+        graphics.fill(x + 1, y + 1, x + STALE_INDICATOR_SIZE - 1,
+                y + STALE_INDICATOR_SIZE - 1, 0xFF4A3518);
+        graphics.drawCenteredString(font, "!", x + STALE_INDICATOR_SIZE / 2, y + 1, 0xFFFFD36B);
+    }
+
+    private static boolean contains(double mouseX, double mouseY,
+                                    int left, int top, int right, int bottom) {
+        return mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom;
     }
 
     private static String itemLabel(ItemKey item) {
@@ -156,6 +182,6 @@ public final class AcquisitionPlanScreen extends Screen {
         return label.append(" #").append(entry.slot()).toString();
     }
 
-    private record Line(String text, int color) {
+    private record Line(String text, int color, Component tooltip) {
     }
 }
