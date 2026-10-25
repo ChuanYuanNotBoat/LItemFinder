@@ -4,6 +4,7 @@ import dev.litemfinder.neoforge.identity.ResolvedContainerIdentity;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 
 import java.util.Objects;
+import java.util.List;
 
 /** Client-thread-only request for M3 to turn a trusted live menu into an immutable snapshot. */
 public record MenuCaptureRequest(
@@ -11,8 +12,14 @@ public record MenuCaptureRequest(
         AbstractContainerMenu menu,
         MenuPartition partition,
         MenuFingerprint fingerprint,
-        CaptureReason reason
+        CaptureReason reason,
+        List<AccessorySlot> accessories
 ) {
+
+    public MenuCaptureRequest(ResolvedContainerIdentity identity, AbstractContainerMenu menu,
+                              MenuPartition partition, MenuFingerprint fingerprint, CaptureReason reason) {
+        this(identity, menu, partition, fingerprint, reason, List.of());
+    }
 
     public MenuCaptureRequest {
         Objects.requireNonNull(identity, "identity must not be null");
@@ -20,6 +27,7 @@ public record MenuCaptureRequest(
         Objects.requireNonNull(partition, "partition must not be null");
         Objects.requireNonNull(fingerprint, "fingerprint must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
+        accessories = List.copyOf(accessories);
         if (!partition.supported()) {
             throw new IllegalArgumentException("capture requests require a supported partition");
         }

@@ -51,5 +51,21 @@
   "gui.litemfinder.wheel_64": "滚轮：±64",
   "gui.litemfinder.summary": "物品 %s 种 · 本次需求 %s 种（会话草稿）",
   "gui.litemfinder.notice.clamped": "库存数量变化，需求已限制到已记录上限",
-  "gui.litemfinder.notice.integer": "请输入非负整数"
+  "gui.litemfinder.notice.integer": "请输入非负整数",
+  "gui.litemfinder.tabs.items": "物品",
+  "gui.litemfinder.fluids.summary": "液体 %s 种 · 点击查看来源和路线 · 悬停查看精确数量",
+  "gui.litemfinder.fluids.open_sources": "点击查看来源和路线",
+  "gui.litemfinder.fluids.source_title": "%s · 来源",
+  "gui.litemfinder.fluids.block_tank": "容器储罐",
+  "gui.litemfinder.fluids.item_path": "物品槽位：%s",
+  "gui.litemfinder.fluids.source_hint": "点击来源定位 · 随身液体点击查看所在容器",
+  "gui.litemfinder.fluids.navigate": "点击在地图中定位并显示路线",
+  "gui.litemfinder.fluids.carried": "随身/逻辑容器 · 点击查看内容",
+  "gui.litemfinder.tabs.fluids": "液体",
+  "gui.litemfinder.fluids.title": "液体库存",
+  "gui.litemfinder.fluids.sources": "%s 个储罐",
+  "gui.litemfinder.fluids.search": "搜索液体",
+  "gui.litemfinder.groups.all": "全部",
+  "gui.litemfinder.groups.select": "分组：%s",
+  "gui.litemfinder.contents.partial": "仅更新可见范围，? 表示未观测"
 }

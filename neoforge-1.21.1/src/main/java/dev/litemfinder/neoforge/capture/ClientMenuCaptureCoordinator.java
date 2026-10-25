@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.InventoryMenu;
 import org.slf4j.Logger;
@@ -54,7 +55,8 @@ public final class ClientMenuCaptureCoordinator {
         Objects.requireNonNull(screen, "screen must not be null");
         Objects.requireNonNull(minecraft, "minecraft must not be null");
         closeActive();
-        if (!(screen instanceof AbstractContainerScreen<?> containerScreen) || minecraft.player == null) {
+        if (!(screen instanceof AbstractContainerScreen<?> containerScreen)
+                || minecraft.player == null || minecraft.level == null) {
             return;
         }
 
@@ -66,6 +68,7 @@ public final class ClientMenuCaptureCoordinator {
         }
 
         AbstractContainerMenu menu = containerScreen.getMenu();
+        if (TerminalMenuAdapters.find(menu).isPresent()) return;
         if (menu instanceof InventoryMenu
                 || menu instanceof CreativeModeInventoryScreen.ItemPickerMenu) {
             return;
@@ -81,13 +84,14 @@ public final class ClientMenuCaptureCoordinator {
         if (identity.confidence() == IdentityConfidence.SESSION_ONLY) {
             diagnostics.degraded("session_only_identity:" + partition.kind());
         }
-        MenuFingerprint initial = fingerprints.calculate(menu, partition);
+        HolderLookup.Provider registries = minecraft.level.registryAccess();
+        MenuFingerprint initial = fingerprints.calculate(menu, partition, registries);
         DebouncedCapture<MenuFingerprint> debounce = new DebouncedCapture<>(
                 OPEN_DELAY_TICKS,
                 CHANGE_DEBOUNCE_TICKS
         );
         debounce.opened(initial);
-        active = new ActiveCapture(screen, menu, partition, identity, debounce, false);
+        active = new ActiveCapture(screen, menu, partition, identity, registries, debounce, false);
     }
 
     public void clientTick(Minecraft minecraft) {
@@ -102,7 +106,7 @@ public final class ClientMenuCaptureCoordinator {
             return;
         }
 
-        MenuFingerprint fingerprint = fingerprints.calculate(current.menu(), current.partition());
+        MenuFingerprint fingerprint = fingerprints.calculate(current.menu(), current.partition(), current.registries());
         current.debounce().tick(fingerprint).ifPresent(stable -> {
             CaptureReason reason = current.captured() ? CaptureReason.CONTENT_STABLE : CaptureReason.OPEN_STABLE;
             active = current.withCaptured(true);
@@ -131,7 +135,7 @@ public final class ClientMenuCaptureCoordinator {
         if (current == null || !current.debounce().isOpen()) {
             return;
         }
-        MenuFingerprint fingerprint = fingerprints.calculate(current.menu(), current.partition());
+        MenuFingerprint fingerprint = fingerprints.calculate(current.menu(), current.partition(), current.registries());
         current.debounce().closed(fingerprint).ifPresent(finalValue -> emit(
                 current,
                 finalValue,
@@ -155,12 +159,13 @@ public final class ClientMenuCaptureCoordinator {
             AbstractContainerMenu menu,
             MenuPartition partition,
             ResolvedContainerIdentity identity,
+            HolderLookup.Provider registries,
             DebouncedCapture<MenuFingerprint> debounce,
             boolean captured
     ) {
 
         private ActiveCapture withCaptured(boolean value) {
-            return new ActiveCapture(screen, menu, partition, identity, debounce, value);
+            return new ActiveCapture(screen, menu, partition, identity, registries, debounce, value);
         }
     }
 }

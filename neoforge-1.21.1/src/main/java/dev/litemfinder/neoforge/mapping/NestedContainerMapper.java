@@ -7,11 +7,7 @@ import dev.litemfinder.core.model.InventorySnapshot;
 import dev.litemfinder.core.model.LogicalLocation;
 import dev.litemfinder.core.model.SlotSnapshot;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.ItemContainerContents;
-import net.minecraft.world.level.block.ShulkerBoxBlock;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -22,23 +18,33 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
-/** Decodes nested shulker-box contents from the vanilla container data component. */
+/** Maps supported nested item inventories using stable root-relative slot paths. */
 public final class NestedContainerMapper {
 
     public static final int DEFAULT_MAX_DEPTH = 8;
-    private static final int SHULKER_SLOTS = 27;
 
     private final MinecraftItemStackMapper items;
     private final CachedItemTagResolver tags;
     private final int maxDepth;
+    private final NestedItemContentsReader contentsReader;
 
     public NestedContainerMapper(MinecraftItemStackMapper items, CachedItemTagResolver tags) {
         this(items, tags, DEFAULT_MAX_DEPTH);
     }
 
     public NestedContainerMapper(MinecraftItemStackMapper items, CachedItemTagResolver tags, int maxDepth) {
+        this(items, tags, maxDepth, new NestedItemContentsReader());
+    }
+
+    public NestedContainerMapper(
+            MinecraftItemStackMapper items,
+            CachedItemTagResolver tags,
+            int maxDepth,
+            NestedItemContentsReader contentsReader
+    ) {
         this.items = Objects.requireNonNull(items, "items must not be null");
         this.tags = Objects.requireNonNull(tags, "tags must not be null");
+        this.contentsReader = Objects.requireNonNull(contentsReader, "contentsReader must not be null");
         if (maxDepth < 1 || maxDepth > 16) {
             throw new IllegalArgumentException("maxDepth must be between 1 and 16");
         }
@@ -59,21 +65,22 @@ public final class NestedContainerMapper {
         Objects.requireNonNull(slotPath, "slotPath must not be null");
         Objects.requireNonNull(registries, "registries must not be null");
         Objects.requireNonNull(capturedAt, "capturedAt must not be null");
-        if (!isShulkerBox(outerStack) || slotPath.isEmpty() || slotPath.size() > maxDepth) {
+        if (slotPath.isEmpty() || slotPath.size() > maxDepth) {
             return Optional.empty();
         }
 
-        ItemContainerContents contents = outerStack.get(DataComponents.CONTAINER);
-        if (contents == null || contents.getSlots() == 0) {
+        Optional<NestedItemContents> resolved = contentsReader.read(outerStack, registries);
+        if (resolved.isEmpty()) {
             return Optional.empty();
         }
+        NestedItemContents contents = resolved.orElseThrow();
 
-        int slotCount = Math.max(SHULKER_SLOTS, contents.getSlots());
+        int slotCount = contents.slotCount();
         List<SlotSnapshot> occupied = new ArrayList<>();
         boolean truncated = false;
-        for (int slot = 0; slot < contents.getSlots(); slot++) {
-            int nestedSlot = slot;
-            ItemStack nestedStack = contents.getStackInSlot(slot);
+        for (var entry : contents.stacks().entrySet()) {
+            int nestedSlot = entry.getKey();
+            ItemStack nestedStack = entry.getValue();
             Optional<MappedItemStack> mapped = items.map(nestedStack, registries);
             if (mapped.isEmpty()) {
                 continue;
@@ -81,11 +88,12 @@ public final class NestedContainerMapper {
             MappedItemStack mappedStack = mapped.orElseThrow();
             tags.remember(mappedStack);
 
-            List<Integer> childPath = append(slotPath, slot);
+            List<Integer> childPath = append(slotPath, nestedSlot);
             Optional<InventorySnapshot> child = Optional.empty();
             if (slotPath.size() < maxDepth) {
                 child = map(nestedStack, mappedStack, root, childPath, registries, capturedAt);
-            } else if (isPopulatedShulkerBox(nestedStack)) {
+            } else if (contentsReader.read(nestedStack, registries)
+                    .filter(nested -> !nested.stacks().isEmpty()).isPresent()) {
                 truncated = true;
             }
 
@@ -98,6 +106,7 @@ public final class NestedContainerMapper {
         Map<String, String> metadata = new TreeMap<>();
         metadata.put("nestedDepth", Integer.toString(slotPath.size()));
         metadata.put("nestedPath", pathText(slotPath));
+        ItemFluidInventoryMetadata.capture(metadata, contents.stacks(), contentsReader, registries, capturedAt);
         if (truncated) {
             metadata.put("nestedTruncated", "max_depth");
         }
@@ -108,15 +117,6 @@ public final class NestedContainerMapper {
                 metadata
         );
         return Optional.of(new InventorySnapshot(nestedContainer, slotCount, capturedAt, occupied));
-    }
-
-    private static boolean isShulkerBox(ItemStack stack) {
-        return stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock() instanceof ShulkerBoxBlock;
-    }
-
-    private static boolean isPopulatedShulkerBox(ItemStack stack) {
-        ItemContainerContents contents = stack.get(DataComponents.CONTAINER);
-        return isShulkerBox(stack) && contents != null && contents.getSlots() > 0;
     }
 
     private static List<Integer> append(List<Integer> path, int slot) {

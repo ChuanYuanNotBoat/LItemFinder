@@ -27,7 +27,7 @@ import java.util.Objects;
 /** Compact read-only inventory overview with a session-only retrieval quantity draft. */
 public final class InventoryOverviewScreen extends Screen {
 
-    private static final int LIST_TOP = 55;
+    private static final int LIST_TOP = 54;
     private static final int FOOTER_HEIGHT = 27;
     private static final int ROW_HEIGHT = 24;
     private static final int EDITOR_EXTRA_HEIGHT = 70;
@@ -59,8 +59,8 @@ public final class InventoryOverviewScreen extends Screen {
 
     @Override
     protected void init() {
-        int searchWidth = Math.max(80, width - 144);
-        searchBox = addRenderableWidget(new EditBox(font, 12, 27, searchWidth, 19,
+        int searchWidth = Math.max(60, width - 248);
+        searchBox = addRenderableWidget(new EditBox(font, 116, 27, searchWidth, 19,
                 Component.translatable("gui.litemfinder.search")));
         searchBox.setMaxLength(MAX_SEARCH_CHARS);
         searchBox.setHint(Component.translatable("gui.litemfinder.search"));
@@ -94,6 +94,13 @@ public final class InventoryOverviewScreen extends Screen {
 
         quantityBox = addRenderableWidget(new EditBox(font, 0, 0, 78, 19,
                 Component.translatable("gui.litemfinder.request")));
+        var itemsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.items"), ignored -> { })
+                .bounds(12, 26, 46, 20).build());
+        itemsTab.active = false;
+        addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.fluids"), ignored -> {
+            commitQuantity();
+            if (minecraft != null) minecraft.setScreen(new FluidOverviewScreen(this, api, null));
+        }).bounds(62, 26, 46, 20).build());
         quantityBox.setMaxLength(32);
         quantityBox.setFilter(value -> value.isEmpty() || value.chars().allMatch(
                 character -> character >= '0' && character <= '9'));
@@ -120,7 +127,7 @@ public final class InventoryOverviewScreen extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0xF0121921);
-        graphics.fill(0, 0, width, 51, 0xFF1C2834);
+        graphics.fill(0, 0, width, LIST_TOP - 4, 0xFF1C2834);
         graphics.drawString(font, title, 12, 9, 0xFFF2F4F6);
 
         List<UnitHit> hits = new ArrayList<>();

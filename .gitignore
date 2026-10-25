@@ -4,6 +4,7 @@ build/
 **/bin/
 **/run/
 **/run-packaged/
+*.patch
 
 .idea/
 *.iml

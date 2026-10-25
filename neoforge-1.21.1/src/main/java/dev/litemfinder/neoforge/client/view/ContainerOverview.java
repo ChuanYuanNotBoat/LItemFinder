@@ -25,6 +25,25 @@ public record ContainerOverview(List<RootRow> roots) {
                 .toList());
     }
 
+    /** Groups require a provider-confirmed network identity; proximity and matching block types imply nothing. */
+    public List<GroupRow> groups() {
+        var byNetwork = new java.util.TreeMap<String, java.util.List<RootRow>>();
+        for (var root : roots) {
+            String network = root.container().metadata().get("storageNetworkId");
+            if (network != null) byNetwork.computeIfAbsent(network, ignored -> new java.util.ArrayList<>()).add(root);
+        }
+        return byNetwork.entrySet().stream().map(entry -> {
+            var latest = entry.getValue().stream().max(Comparator.comparing(row -> {
+                try { return Instant.parse(row.container().metadata().getOrDefault("storageNetworkObservedAt", row.observedAt().toString())); }
+                catch (RuntimeException invalid) { return row.observedAt(); }
+            })).orElseThrow();
+            return new GroupRow(entry.getKey(), latest.container().metadata().getOrDefault("storageNetworkName", "Storage network"),
+                    entry.getValue().stream().map(row -> row.container().id()).sorted().toList());
+        }).toList();
+    }
+
+    public record GroupRow(String id, String name, List<dev.litemfinder.core.model.ContainerId> members) { }
+
     public record RootRow(ContainerRecord container, Instant observedAt, int slots, int occupiedSlots,
                           List<SlotSnapshot> contents) {
 

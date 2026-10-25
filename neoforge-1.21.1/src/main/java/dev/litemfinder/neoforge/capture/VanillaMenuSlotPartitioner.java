@@ -1,5 +1,6 @@
 package dev.litemfinder.neoforge.capture;
 
+import dev.litemfinder.neoforge.api.inventory.MenuStorage;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractFurnaceMenu;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -28,6 +29,12 @@ public final class VanillaMenuSlotPartitioner {
     public MenuPartition partition(AbstractContainerMenu menu, Inventory playerInventory) {
         Objects.requireNonNull(menu, "menu must not be null");
         Objects.requireNonNull(playerInventory, "playerInventory must not be null");
+        if (TerminalMenuAdapters.find(menu).isPresent()) return MenuPartition.unsupported("terminal_managed");
+
+        var modStorage = StorageMenuAdapters.resolve(menu);
+        if (modStorage.isPresent()) {
+            return selectBackingStorage(menu, playerInventory, modStorage.orElseThrow());
+        }
 
         if (menu instanceof InventoryMenu) {
             return includePlayerInventory
@@ -56,6 +63,29 @@ public final class VanillaMenuSlotPartitioner {
             return selectFirstSlots(menu, playerInventory, 9, "crafter");
         }
         return MenuPartition.unsupported("unsupported_menu:" + menu.getClass().getSimpleName());
+    }
+
+    private static MenuPartition selectBackingStorage(AbstractContainerMenu menu, Inventory player,
+                                                       MenuStorage storage) {
+        List<MenuSlotRef> selected = new ArrayList<>();
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        for (int index = 0; index < menu.slots.size(); index++) {
+            Slot slot = menu.slots.get(index);
+            if (slot.container == player) continue;
+            java.util.OptionalInt matched;
+            try {
+                matched = storage.slotIndex(slot);
+            } catch (IllegalArgumentException invalidSlot) {
+                return MenuPartition.unsupported("unexpected_layout:mod_storage");
+            }
+            if (matched.isEmpty()) continue;
+            int backingSlot = matched.getAsInt();
+            // Some menus render multiple views of one real slot. Count its contents once.
+            if (seen.add(backingSlot)) selected.add(new MenuSlotRef(index, backingSlot));
+        }
+        if (selected.isEmpty()) return MenuPartition.unsupported("no_trusted_slots:mod_storage");
+        selected.sort(java.util.Comparator.comparingInt(MenuSlotRef::containerSlot));
+        return MenuPartition.supported("mod_storage:" + menu.getClass().getSimpleName(), selected);
     }
 
     private static MenuPartition selectExpectedStorage(

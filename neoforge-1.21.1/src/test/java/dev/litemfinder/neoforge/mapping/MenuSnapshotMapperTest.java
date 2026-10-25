@@ -58,7 +58,7 @@ class MenuSnapshotMapperTest {
                 identity,
                 menu,
                 partition,
-                new MenuFingerprintCalculator().calculate(menu, partition),
+                new MenuFingerprintCalculator().calculate(menu, partition, registries()),
                 CaptureReason.OPEN_STABLE
         );
         CachedItemTagResolver tags = new CachedItemTagResolver();

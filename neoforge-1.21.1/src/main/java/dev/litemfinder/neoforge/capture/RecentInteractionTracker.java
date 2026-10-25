@@ -56,6 +56,23 @@ public final class RecentInteractionTracker {
 
         Target current = target;
         target = null;
+        var storage = StorageMenuAdapters.resolve(menu);
+        if (storage.isPresent()) {
+            var resolved = storage.orElseThrow();
+            if (resolved.position().isPresent() && resolved.owner().isPresent() && resolved.owner().orElseThrow().getLevel() == player.level()) {
+                BlockPos position = resolved.position().orElseThrow();
+                BlockState state = player.level().getBlockState(position);
+                return identities.block(scope, player.level(), normalizeChest(position, state), menu);
+            }
+            if (resolved.position().isPresent() && resolved.owner().isEmpty() && player.level().getChunkSource()
+                    .hasChunk(resolved.position().orElseThrow().getX() >> 4, resolved.position().orElseThrow().getZ() >> 4)) {
+                BlockPos position = resolved.position().orElseThrow();
+                BlockState state = player.level().getBlockState(position);
+                if (state.hasBlockEntity()) {
+                    return identities.block(scope, player.level(), normalizeChest(position, state), menu);
+                }
+            }
+        }
         if (current != null && tick - current.observedAt() <= MAX_AGE_TICKS) {
             if (current instanceof BlockTarget block && block.level() == player.level()) {
                 BlockState state = block.level().getBlockState(block.position());

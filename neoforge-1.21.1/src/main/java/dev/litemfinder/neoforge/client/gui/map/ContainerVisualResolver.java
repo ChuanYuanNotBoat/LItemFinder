@@ -2,6 +2,7 @@ package dev.litemfinder.neoforge.client.gui.map;
 
 import dev.litemfinder.core.model.WorldLocation;
 import dev.litemfinder.neoforge.client.view.ContainerOverview;
+import dev.litemfinder.neoforge.mapping.MinecraftBlockStateMetadata;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -22,8 +23,11 @@ public final class ContainerVisualResolver {
     public ContainerBlockVisual resolve(ContainerOverview.RootRow row) {
         String recordedId = row.container().metadata().get("minecraftBlock");
         StaticVisual base = staticVisual(recordedId);
-        BlockState state = liveState(row, base.block(), recordedId);
-        return new ContainerBlockVisual(base.block(), state, base.icon(), base.resolved());
+        BlockState recorded = MinecraftBlockStateMetadata.restore(row.container(), base.block().defaultBlockState());
+        // Recorded structures need no world reads while rendering; legacy rows may use loaded state.
+        BlockState state = row.container().metadata().containsKey(MinecraftBlockStateMetadata.KEY)
+                ? recorded : liveState(row, recorded, recordedId);
+        return new ContainerBlockVisual(base.block(), ContainerStructure.from(state), base.icon(), base.resolved());
     }
 
     public void clear() {
@@ -50,28 +54,28 @@ public final class ContainerVisualResolver {
         return new StaticVisual(Blocks.CHEST, new ItemStack(Blocks.CHEST), false);
     }
 
-    private BlockState liveState(ContainerOverview.RootRow row, Block fallback, String recordedId) {
+    private BlockState liveState(ContainerOverview.RootRow row, BlockState fallback, String recordedId) {
         if (!(row.container().location() instanceof WorldLocation world)) {
-            return fallback.defaultBlockState();
+            return fallback;
         }
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level == null
+        if (minecraft == null || minecraft.level == null
                 || !minecraft.level.dimension().location().toString().equals(world.dimension().toString())) {
-            return fallback.defaultBlockState();
+            return fallback;
         }
         BlockPos pos = new BlockPos(world.x(), world.y(), world.z());
         if (!minecraft.level.hasChunkAt(pos)) {
-            return fallback.defaultBlockState();
+            return fallback;
         }
         BlockState live = minecraft.level.getBlockState(pos);
         ResourceLocation liveKey = BuiltInRegistries.BLOCK.getKey(live.getBlock());
         if (recordedId == null || liveKey.toString().equals(recordedId)) {
             return live;
         }
-        return fallback.defaultBlockState();
+        return fallback;
     }
 
-    public record ContainerBlockVisual(Block block, BlockState state, ItemStack icon, boolean resolved) {
+    public record ContainerBlockVisual(Block block, ContainerStructure structure, ItemStack icon, boolean resolved) {
     }
 
     private record StaticVisual(Block block, ItemStack icon, boolean resolved) {

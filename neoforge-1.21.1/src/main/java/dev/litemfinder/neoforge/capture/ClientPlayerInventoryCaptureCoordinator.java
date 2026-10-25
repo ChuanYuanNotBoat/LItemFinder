@@ -5,11 +5,14 @@ import dev.litemfinder.neoforge.identity.MinecraftContainerIdentityResolver;
 import dev.litemfinder.neoforge.identity.MinecraftScopeResolver;
 import dev.litemfinder.neoforge.identity.ResolvedContainerIdentity;
 import dev.litemfinder.neoforge.lifecycle.DebouncedCapture;
+import dev.litemfinder.neoforge.api.inventory.EquipmentInventorySource;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.world.inventory.InventoryMenu;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.List;
 import java.util.function.Consumer;
 
 /** Observes the player's real inventory even when no inventory screen is open. */
@@ -24,6 +27,8 @@ public final class ClientPlayerInventoryCaptureCoordinator {
     private final MenuFingerprintCalculator fingerprints;
     private final CaptureDiagnostics diagnostics;
     private final Consumer<MenuCaptureRequest> captureSink;
+    private final EquipmentInventorySource accessories;
+    private List<AccessorySlot> observedAccessories = List.of();
 
     private ActiveCapture active;
     private String lastSkipReason;
@@ -36,12 +41,21 @@ public final class ClientPlayerInventoryCaptureCoordinator {
             CaptureDiagnostics diagnostics,
             Consumer<MenuCaptureRequest> captureSink
     ) {
+        this(scopes, identities, partitions, fingerprints, diagnostics, captureSink, new EquipmentInventorySources());
+    }
+
+    public ClientPlayerInventoryCaptureCoordinator(
+            MinecraftScopeResolver scopes, MinecraftContainerIdentityResolver identities,
+            VanillaMenuSlotPartitioner partitions, MenuFingerprintCalculator fingerprints,
+            CaptureDiagnostics diagnostics, Consumer<MenuCaptureRequest> captureSink, EquipmentInventorySource accessories
+    ) {
         this.scopes = Objects.requireNonNull(scopes, "scopes must not be null");
         this.identities = Objects.requireNonNull(identities, "identities must not be null");
         this.partitions = Objects.requireNonNull(partitions, "partitions must not be null");
         this.fingerprints = Objects.requireNonNull(fingerprints, "fingerprints must not be null");
         this.diagnostics = Objects.requireNonNull(diagnostics, "diagnostics must not be null");
         this.captureSink = Objects.requireNonNull(captureSink, "captureSink must not be null");
+        this.accessories = Objects.requireNonNull(accessories);
     }
 
     public void clientTick(Minecraft minecraft) {
@@ -53,6 +67,8 @@ public final class ClientPlayerInventoryCaptureCoordinator {
 
         InventoryMenu menu = minecraft.player.inventoryMenu;
         ActiveCapture current = active;
+        if (current == null || current.menu() != menu) observedAccessories = List.of();
+        accessories.read(minecraft.player).ifPresent(value -> observedAccessories = value);
         if (current == null || current.menu() != menu) {
             Optional<String> resolvedScope = scopes.resolve(minecraft);
             if (resolvedScope.isEmpty()) {
@@ -66,19 +82,20 @@ public final class ClientPlayerInventoryCaptureCoordinator {
                 active = null;
                 return;
             }
-            MenuFingerprint initial = fingerprints.calculate(menu, partition);
+            HolderLookup.Provider registries = minecraft.level.registryAccess();
+            MenuFingerprint initial = fingerprints.calculate(menu, partition, registries, observedAccessories);
             DebouncedCapture<MenuFingerprint> debounce = new DebouncedCapture<>(
                     INITIAL_DELAY_TICKS,
                     CHANGE_DEBOUNCE_TICKS
             );
             debounce.opened(initial);
             ResolvedContainerIdentity identity = identities.playerInventory(scope, minecraft.player);
-            current = new ActiveCapture(scope, menu, partition, identity, debounce, false);
+            current = new ActiveCapture(scope, menu, partition, identity, registries, debounce, false);
             active = current;
         }
 
         lastSkipReason = null;
-        MenuFingerprint fingerprint = fingerprints.calculate(current.menu(), current.partition());
+        MenuFingerprint fingerprint = fingerprints.calculate(current.menu(), current.partition(), current.registries(), observedAccessories);
         ActiveCapture capture = current;
         current.debounce().tick(fingerprint).ifPresent(stable -> {
             CaptureReason reason = capture.captured() ? CaptureReason.CONTENT_STABLE : CaptureReason.OPEN_STABLE;
@@ -94,7 +111,7 @@ public final class ClientPlayerInventoryCaptureCoordinator {
         if (current == null || !current.debounce().isOpen()) {
             return;
         }
-        MenuFingerprint fingerprint = fingerprints.calculate(current.menu(), current.partition());
+        MenuFingerprint fingerprint = fingerprints.calculate(current.menu(), current.partition(), current.registries(), observedAccessories);
         current.debounce().closed(fingerprint).ifPresent(finalValue -> emit(
                 current,
                 finalValue,
@@ -105,6 +122,8 @@ public final class ClientPlayerInventoryCaptureCoordinator {
     public void reset() {
         active = null;
         lastSkipReason = null;
+        observedAccessories = List.of();
+        if (accessories instanceof EquipmentInventorySources sources) sources.clear();
     }
 
     private void emit(ActiveCapture current, MenuFingerprint fingerprint, CaptureReason reason) {
@@ -114,7 +133,8 @@ public final class ClientPlayerInventoryCaptureCoordinator {
                 current.menu(),
                 current.partition(),
                 fingerprint,
-                reason
+                reason,
+                observedAccessories
         ));
     }
 
@@ -130,12 +150,13 @@ public final class ClientPlayerInventoryCaptureCoordinator {
             InventoryMenu menu,
             MenuPartition partition,
             ResolvedContainerIdentity identity,
+            HolderLookup.Provider registries,
             DebouncedCapture<MenuFingerprint> debounce,
             boolean captured
     ) {
 
         private ActiveCapture withCaptured(boolean value) {
-            return new ActiveCapture(scope, menu, partition, identity, debounce, value);
+            return new ActiveCapture(scope, menu, partition, identity, registries, debounce, value);
         }
     }
 }

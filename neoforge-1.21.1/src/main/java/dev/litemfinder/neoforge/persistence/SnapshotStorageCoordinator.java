@@ -41,6 +41,7 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
     private volatile StorageIndex currentIndex = new InMemoryStorageIndex();
     private boolean drainScheduled;
     private boolean accepting = true;
+    private final java.util.concurrent.atomic.AtomicInteger pendingPartial = new java.util.concurrent.atomic.AtomicInteger();
 
     // Accessed only by the storage executor.
     private String currentScope;
@@ -84,6 +85,36 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
 
     public StorageIndex currentIndex() {
         return currentIndex;
+    }
+
+    /** Partial pages must be applied in order; coalescing them would discard previously visible ranges. */
+    public CompletableFuture<Boolean> submitPartial(InventorySnapshot observed, java.util.Set<Integer> covered, boolean complete) {
+        covered = java.util.Set.copyOf(covered);
+        CompletableFuture<Boolean> result = new CompletableFuture<>();
+        if (!isAccepting()) { result.complete(false); return result; }
+        if (pendingPartial.incrementAndGet() > DEFAULT_PENDING_CAPACITY) {
+            pendingPartial.decrementAndGet();
+            result.complete(false);
+            return result;
+        }
+        var range = covered;
+        try {
+            executor.execute(() -> {
+                try {
+                    ensureScope(observed.container().location().scope());
+                    var previous = currentIndex.rootSnapshots().stream()
+                            .filter(root -> root.container().id().equals(observed.container().id())).findFirst().orElse(null);
+                    var merged = PartialSnapshotMerger.merge(previous, observed, range, complete);
+                    if (merged.isPresent()) {
+                        currentRepository.save(merged.orElseThrow());
+                        currentIndex.update(merged.orElseThrow());
+                    }
+                    result.complete(merged.isPresent());
+                } catch (RuntimeException failure) { result.completeExceptionally(failure); }
+                finally { pendingPartial.decrementAndGet(); }
+            });
+        } catch (RuntimeException failure) { pendingPartial.decrementAndGet(); result.completeExceptionally(failure); }
+        return result;
     }
 
     /** Waits for all work already submitted by the caller to finish without closing the active scope. */
@@ -197,10 +228,21 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
     private void persist(PendingSnapshot pendingSnapshot) {
         try {
             ensureScope(pendingSnapshot.scope());
-            if (pendingSnapshot.persistable()) {
-                currentRepository.save(pendingSnapshot.snapshot());
+            InventorySnapshot snapshot = pendingSnapshot.snapshot();
+            var previous = currentIndex.rootSnapshots().stream()
+                    .filter(root -> root.container().id().equals(pendingSnapshot.snapshot().container().id()))
+                    .findFirst().orElse(null);
+            if (previous != null && previous.container().metadata().containsKey("lastPartialObservedAt")
+                    && snapshot.capturedAt().isBefore(java.time.Instant.parse(previous.container().metadata().get("lastPartialObservedAt")))) {
+                return;
             }
-            currentIndex.update(pendingSnapshot.snapshot());
+            snapshot = dev.litemfinder.neoforge.mapping.FluidInventoryMetadata.preserveUnavailable(snapshot, previous);
+            snapshot = PartialSnapshotMerger.retainNetwork(snapshot, previous);
+            snapshot = dev.litemfinder.neoforge.mapping.ItemFluidInventoryMetadata.preserveUnavailable(snapshot, previous);
+            if (pendingSnapshot.persistable()) {
+                currentRepository.save(snapshot);
+            }
+            currentIndex.update(snapshot);
         } catch (RuntimeException exception) {
             LOGGER.error(
                     "Failed to store snapshot {} in scope {}",

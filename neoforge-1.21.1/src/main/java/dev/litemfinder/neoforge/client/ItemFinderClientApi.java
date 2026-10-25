@@ -29,6 +29,10 @@ public interface ItemFinderClientApi {
     /** All known root containers, including empty roots, for a future spatial map. */
     ContainerOverview containerOverview();
 
+    default dev.litemfinder.neoforge.client.view.FluidOverview fluidOverview() {
+        return dev.litemfinder.neoforge.client.view.FluidOverview.from(containerOverview());
+    }
+
     /** Recompute exact-variant source allocation against the current index. */
     AcquisitionPlan plan(Map<ItemKey, Long> requests);
 

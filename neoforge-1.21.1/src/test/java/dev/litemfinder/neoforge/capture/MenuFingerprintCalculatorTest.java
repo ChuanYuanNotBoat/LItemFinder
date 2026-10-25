@@ -1,6 +1,8 @@
 package dev.litemfinder.neoforge.capture;
 
 import net.minecraft.server.Bootstrap;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.ChestMenu;
@@ -28,11 +30,11 @@ class MenuFingerprintCalculatorTest {
         SimpleContainer chest = new SimpleContainer(27);
         ChestMenu menu = ChestMenu.threeRows(1, player, chest);
         MenuPartition partition = partitions.partition(menu, player);
-        MenuFingerprint before = fingerprints.calculate(menu, partition);
+        MenuFingerprint before = fingerprints.calculate(menu, partition, registries());
 
         player.setItem(0, new ItemStack(Items.DIAMOND, 5));
 
-        assertEquals(before, fingerprints.calculate(menu, partition));
+        assertEquals(before, fingerprints.calculate(menu, partition, registries()));
     }
 
     @Test
@@ -41,16 +43,20 @@ class MenuFingerprintCalculatorTest {
         SimpleContainer chest = new SimpleContainer(27);
         ChestMenu menu = ChestMenu.threeRows(1, player, chest);
         MenuPartition partition = partitions.partition(menu, player);
-        MenuFingerprint empty = fingerprints.calculate(menu, partition);
+        MenuFingerprint empty = fingerprints.calculate(menu, partition, registries());
 
         chest.setItem(0, new ItemStack(Items.DIAMOND, 1));
-        MenuFingerprint one = fingerprints.calculate(menu, partition);
+        MenuFingerprint one = fingerprints.calculate(menu, partition, registries());
         chest.setItem(0, new ItemStack(Items.DIAMOND, 2));
-        MenuFingerprint two = fingerprints.calculate(menu, partition);
+        MenuFingerprint two = fingerprints.calculate(menu, partition, registries());
 
         assertNotEquals(empty, one);
         assertNotEquals(one, two);
         assertEquals(1, one.occupiedSlots());
         assertEquals(27, one.slotCount());
+    }
+
+    private static RegistryAccess.Frozen registries() {
+        return RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY);
     }
 }

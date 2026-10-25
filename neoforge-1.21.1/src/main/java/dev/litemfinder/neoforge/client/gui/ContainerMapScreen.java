@@ -6,6 +6,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.logging.LogUtils;
 import com.mojang.math.Axis;
 import dev.litemfinder.core.model.ContainerId;
+import dev.litemfinder.core.model.ItemKey;
 import dev.litemfinder.core.model.NamespacedId;
 import dev.litemfinder.core.model.WorldLocation;
 import dev.litemfinder.core.model.WorldPosition;
@@ -14,7 +15,8 @@ import dev.litemfinder.neoforge.client.ItemFinderClientApi;
 import dev.litemfinder.neoforge.client.gui.map.ContainerMap3DCamera;
 import dev.litemfinder.neoforge.client.gui.map.ContainerRouteOptimizer;
 import dev.litemfinder.neoforge.client.gui.map.ContainerVisualResolver;
-import dev.litemfinder.neoforge.client.gui.map.LoadedTerrainSampler;
+import dev.litemfinder.neoforge.client.gui.map.ContainerSceneRenderer;
+import dev.litemfinder.neoforge.client.gui.map.MapLineClipper;
 import dev.litemfinder.neoforge.client.navigation.NavigationGateway;
 import dev.litemfinder.neoforge.client.view.AcquisitionDraft;
 import dev.litemfinder.neoforge.client.view.AcquisitionPlan;
@@ -23,11 +25,9 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.saveddata.maps.MapDecoration;
@@ -36,6 +36,7 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +44,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** Full-screen container map backed by recorded locations and currently loaded client terrain. */
+/** Full-screen container map backed by recorded container locations. */
 public final class ContainerMapScreen extends Screen {
 
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -60,22 +61,24 @@ public final class ContainerMapScreen extends Screen {
     private static final double GRID_MIN_SCREEN_SPACING = 48.0;
     private static final double GRID_MAX_SCREEN_SPACING = 104.0;
     private static final double LOCAL_OUTLINE_EXPANSION = 1.0 / 64.0;
-    private static final double TERRAIN_MIN_ZOOM = 0.18;
-    private static final int TERRAIN_MAX_VISIBLE_SAMPLES = 4_096;
-    private static final int TERRAIN_NEW_SAMPLES_PER_FRAME = 512;
-    private static final int TERRAIN_CONTOUR_INTERVAL = 4;
-    private static final int TERRAIN_MAJOR_CONTOUR_INTERVAL = 16;
     private static final MapDecoration PLAYER_MAP_DECORATION = new MapDecoration(
             MapDecorationTypes.PLAYER, (byte) 0, (byte) 0, (byte) 0, Optional.empty());
 
     private final Screen parent;
     private final ItemFinderClientApi api;
     private final AcquisitionDraft draft;
+    private final Set<ContainerId> explicitTargets;
     private final ContainerVisualResolver visualResolver = new ContainerVisualResolver();
+    private final ContainerSceneRenderer sceneRenderer = new ContainerSceneRenderer();
     private final ContainerMap3DCamera localCamera = new ContainerMap3DCamera();
-    private final LoadedTerrainSampler terrainSampler = new LoadedTerrainSampler();
     private final java.util.Optional<NavigationGateway> navigation = NavigationGateway.discover();
     private ContainerOverview overview = new ContainerOverview(List.of());
+    private Map<NamespacedId, List<ContainerOverview.RootRow>> rootsByDimension = Map.of();
+    private Map<ContainerId, ContainerOverview.RootRow> rootsById = Map.of();
+    private List<ContainerOverview.RootRow> logicalRoots = List.of();
+    private Set<ContainerId> plannedRoots = Set.of();
+    private Map<ItemKey, Long> plannedSelections = Map.of();
+    private final Map<ContainerId, ContainerVisualResolver.ContainerBlockVisual> localVisuals = new HashMap<>();
     private AcquisitionPlan routePlan = new AcquisitionPlan(List.of(), Map.of());
     private NavigationGateway.Overlay navigationOverlay;
     private List<NamespacedId> dimensions = List.of();
@@ -91,6 +94,10 @@ public final class ContainerMapScreen extends Screen {
     private Button lowerButton;
     private Button upperButton;
     private Button contentsButton;
+    private Button groupButton;
+    private List<ContainerOverview.GroupRow> storageGroups = List.of();
+    private String storageGroup;
+    private Set<ContainerId> storageGroupMembers = Set.of();
     private boolean localView;
     private boolean panning;
     private int localDragButton = -1;
@@ -112,20 +119,35 @@ public final class ContainerMapScreen extends Screen {
     private int lastNavigationTick = -200;
     private WorldPosition routeOrigin;
     private List<WorldLocation> orderedRouteStops = List.of();
+    private List<WorldLocation> lastRouteSourceStops = List.of();
     private WorldPosition lastNavigationOrigin;
     private List<WorldLocation> lastNavigationStops = List.of();
 
     public ContainerMapScreen(Screen parent, ItemFinderClientApi api,
                               AcquisitionDraft draft, NamespacedId highlightedItem) {
+        this(parent, api, draft, highlightedItem, Set.of(), null);
+    }
+
+    public static ContainerMapScreen forSources(Screen parent, ItemFinderClientApi api,
+                                                Set<ContainerId> targets, ContainerId focus) {
+        ContainerId initial = focus != null ? focus : targets.stream().sorted().findFirst().orElse(null);
+        return new ContainerMapScreen(parent, api, new AcquisitionDraft(), null, targets, initial);
+    }
+
+    private ContainerMapScreen(Screen parent, ItemFinderClientApi api, AcquisitionDraft draft,
+                               NamespacedId highlightedItem, Set<ContainerId> targets, ContainerId focus) {
         super(Component.translatable("gui.litemfinder.map.title"));
         this.parent = Objects.requireNonNull(parent, "parent must not be null");
         this.api = Objects.requireNonNull(api, "api must not be null");
         this.draft = Objects.requireNonNull(draft, "draft must not be null");
         this.highlightedItem = highlightedItem;
+        this.explicitTargets = Set.copyOf(targets);
+        this.selected = focus;
     }
 
     @Override
     protected void init() {
+        sceneRenderer.clear();
         searchBox = addRenderableWidget(new EditBox(font, 12, 25, Math.max(70, width - 437), 18,
                 Component.translatable("gui.litemfinder.map.search")));
         searchBox.setHint(Component.translatable("gui.litemfinder.map.search"));
@@ -148,6 +170,8 @@ public final class ContainerMapScreen extends Screen {
         contentsButton = addRenderableWidget(Button.builder(
                         Component.translatable("gui.litemfinder.map.contents"), ignored -> openSelectedContents())
                 .bounds(mapRight() + 6, HEADER + 112, PANEL_WIDTH - 18, 20).build());
+        groupButton = addRenderableWidget(Button.builder(Component.empty(), ignored -> cycleStorageGroup())
+                .bounds(mapRight() + 6, HEADER + 138, PANEL_WIDTH - 18, 20).build());
         refresh();
         updateButtons();
     }
@@ -172,7 +196,6 @@ public final class ContainerMapScreen extends Screen {
         if (localView) {
             renderLocal(graphics);
         } else {
-            renderTerrainContext(graphics);
             renderGrid(graphics);
             renderRoute(graphics);
             renderMapMarkers(graphics);
@@ -216,160 +239,6 @@ public final class ContainerMapScreen extends Screen {
             int y = stablePixel(screenZ(index * step));
             graphics.hLine(left, right, y, 0xFF2C4151);
         }
-    }
-
-    private void renderTerrainContext(GuiGraphics graphics) {
-        if (minecraft == null || minecraft.level == null || minecraft.player == null
-                || dimension == null || zoom < TERRAIN_MIN_ZOOM
-                || !NamespacedId.parse(minecraft.level.dimension().location().toString()).equals(dimension)) {
-            return;
-        }
-        int playerChunkX = ((int) Math.floor(minecraft.player.getX())) >> 4;
-        int playerChunkZ = ((int) Math.floor(minecraft.player.getZ())) >> 4;
-        int chunkRadius = minecraft.options.renderDistance().get() + 1;
-        double loadedLeft = (playerChunkX - chunkRadius) * 16.0;
-        double loadedRight = (playerChunkX + chunkRadius + 1) * 16.0;
-        double loadedTop = (playerChunkZ - chunkRadius) * 16.0;
-        double loadedBottom = (playerChunkZ + chunkRadius + 1) * 16.0;
-        double worldLeft = Math.max(loadedLeft, centerX + (8 - mapCenterX()) / zoom);
-        double worldRight = Math.min(loadedRight, centerX + (mapRight() - mapCenterX()) / zoom);
-        double worldTop = Math.max(loadedTop, centerZ + (HEADER - mapCenterY()) / zoom);
-        double worldBottom = Math.min(loadedBottom, centerZ + (mapBottom() - mapCenterY()) / zoom);
-        if (worldLeft >= worldRight || worldTop >= worldBottom) {
-            return;
-        }
-        int step = terrainSampleStep(worldRight - worldLeft, worldBottom - worldTop);
-        long firstX = (long) Math.floor(worldLeft / step) * step;
-        long lastX = (long) Math.ceil(worldRight / step) * step;
-        long firstZ = (long) Math.floor(worldTop / step) * step;
-        long lastZ = (long) Math.ceil(worldBottom / step) * step;
-        int columns = (int) Math.min(Integer.MAX_VALUE, (lastX - firstX) / step + 1);
-        int rows = (int) Math.min(Integer.MAX_VALUE, (lastZ - firstZ) / step + 1);
-        if ((long) columns * rows > TERRAIN_MAX_VISIBLE_SAMPLES + columns + rows) {
-            return;
-        }
-
-        terrainSampler.beginFrame(TERRAIN_NEW_SAMPLES_PER_FRAME);
-        LoadedTerrainSampler.TerrainSample[][] samples =
-                new LoadedTerrainSampler.TerrainSample[rows][columns];
-        for (int row = 0; row < rows; row++) {
-            long worldZ = firstZ + (long) row * step;
-            for (int column = 0; column < columns; column++) {
-                long worldX = firstX + (long) column * step;
-                long sampleX = worldX + step / 2L;
-                long sampleZ = worldZ + step / 2L;
-                if (sampleX < Integer.MIN_VALUE || sampleX > Integer.MAX_VALUE
-                        || sampleZ < Integer.MIN_VALUE || sampleZ > Integer.MAX_VALUE) {
-                    continue;
-                }
-                Optional<LoadedTerrainSampler.TerrainSample> sampled = terrainSampler.sample(
-                        minecraft.level, (int) sampleX, (int) sampleZ, ticks);
-                if (sampled.isEmpty()) {
-                    continue;
-                }
-                LoadedTerrainSampler.TerrainSample sample = sampled.orElseThrow();
-                samples[row][column] = sample;
-                int left = stablePixel(screenX(worldX));
-                int right = stablePixel(screenX(worldX + step));
-                int top = stablePixel(screenZ(worldZ));
-                int bottom = stablePixel(screenZ(worldZ + step));
-                graphics.fill(left, top, Math.max(left + 1, right), Math.max(top + 1, bottom),
-                        terrainColor(sample));
-            }
-        }
-        for (int row = 1; row < rows; row++) {
-            double top = screenZ(firstZ + (row - 0.5) * step);
-            double bottom = screenZ(firstZ + (row + 0.5) * step);
-            for (int column = 1; column < columns; column++) {
-                LoadedTerrainSampler.TerrainSample topLeft = samples[row - 1][column - 1];
-                LoadedTerrainSampler.TerrainSample topRight = samples[row - 1][column];
-                LoadedTerrainSampler.TerrainSample bottomRight = samples[row][column];
-                LoadedTerrainSampler.TerrainSample bottomLeft = samples[row][column - 1];
-                if (topLeft == null || topRight == null || bottomRight == null || bottomLeft == null) {
-                    continue;
-                }
-                double left = screenX(firstX + (column - 0.5) * step);
-                double right = screenX(firstX + (column + 0.5) * step);
-                renderContourCell(graphics, left, top, right, bottom,
-                        topLeft.height(), topRight.height(), bottomRight.height(), bottomLeft.height());
-            }
-        }
-    }
-
-    private static void renderContourCell(GuiGraphics graphics, double left, double top,
-                                          double right, double bottom,
-                                          int topLeft, int topRight, int bottomRight, int bottomLeft) {
-        int minimum = Math.min(Math.min(topLeft, topRight), Math.min(bottomRight, bottomLeft));
-        int maximum = Math.max(Math.max(topLeft, topRight), Math.max(bottomRight, bottomLeft));
-        int level = Math.floorDiv(minimum, TERRAIN_CONTOUR_INTERVAL) * TERRAIN_CONTOUR_INTERVAL;
-        if (level <= minimum) {
-            level += TERRAIN_CONTOUR_INTERVAL;
-        }
-        for (; level <= maximum; level += TERRAIN_CONTOUR_INTERVAL) {
-            List<ContourPoint> crossings = new ArrayList<>(4);
-            addContourCrossing(crossings, left, top, topLeft, right, top, topRight, level);
-            addContourCrossing(crossings, right, top, topRight, right, bottom, bottomRight, level);
-            addContourCrossing(crossings, right, bottom, bottomRight, left, bottom, bottomLeft, level);
-            addContourCrossing(crossings, left, bottom, bottomLeft, left, top, topLeft, level);
-            int color = Math.floorMod(level, TERRAIN_MAJOR_CONTOUR_INTERVAL) == 0
-                    ? 0xE0B6CBD7 : 0xC0809AA9;
-            if (crossings.size() == 2) {
-                drawThinLine(graphics, crossings.get(0), crossings.get(1), color);
-            } else if (crossings.size() == 4) {
-                drawThinLine(graphics, crossings.get(0), crossings.get(1), color);
-                drawThinLine(graphics, crossings.get(2), crossings.get(3), color);
-            }
-        }
-    }
-
-    private static void addContourCrossing(List<ContourPoint> crossings,
-                                           double firstX, double firstY, int firstHeight,
-                                           double secondX, double secondY, int secondHeight, int level) {
-        if ((firstHeight < level) == (secondHeight < level) || firstHeight == secondHeight) {
-            return;
-        }
-        double progress = (level - firstHeight) / (double) (secondHeight - firstHeight);
-        crossings.add(new ContourPoint(
-                firstX + (secondX - firstX) * progress,
-                firstY + (secondY - firstY) * progress));
-    }
-
-    private static void drawThinLine(GuiGraphics graphics, ContourPoint from, ContourPoint to, int color) {
-        int steps = Math.max((int) Math.ceil(Math.abs(to.x() - from.x())),
-                (int) Math.ceil(Math.abs(to.y() - from.y())));
-        for (int index = 0; index <= steps; index++) {
-            double progress = steps == 0 ? 0.0 : index / (double) steps;
-            int x = stablePixel(from.x() + (to.x() - from.x()) * progress);
-            int y = stablePixel(from.y() + (to.y() - from.y()) * progress);
-            graphics.fill(x, y, x + 1, y + 1, color);
-        }
-    }
-
-    private int terrainSampleStep(double worldWidth, double worldHeight) {
-        int step = 1;
-        while (step < 16) {
-            long columns = (long) Math.ceil(worldWidth / step) + 2;
-            long rows = (long) Math.ceil(worldHeight / step) + 2;
-            if (columns * rows <= TERRAIN_MAX_VISIBLE_SAMPLES && step * zoom >= 3.0) {
-                break;
-            }
-            step *= 2;
-        }
-        return step;
-    }
-
-    private static int terrainColor(LoadedTerrainSampler.TerrainSample sample) {
-        return switch (sample.surface()) {
-            case WATER -> 0xFF1E6387;
-            case LAVA -> 0xFF9A3F1F;
-            case LAND -> {
-                int elevation = Math.max(0, Math.min(20, (sample.height() + 64) / 16));
-                int red = 21 + elevation;
-                int green = 31 + elevation * 2;
-                int blue = 36 + elevation * 2;
-                yield 0xFF000000 | red << 16 | green << 8 | blue;
-            }
-        };
     }
 
     private void renderMapCoordinates(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -439,13 +308,11 @@ public final class ContainerMapScreen extends Screen {
 
     private void renderMapMarkers(GuiGraphics graphics) {
         List<Hit> markers = new ArrayList<>();
-        List<ContainerOverview.RootRow> rows = new ArrayList<>(worldRoots());
-        rows.sort(Comparator.comparing(row -> row.container().id()));
-        for (ContainerOverview.RootRow row : rows) {
+        for (ContainerOverview.RootRow row : worldRoots()) {
             WorldLocation location = (WorldLocation) row.container().location();
             double x = screenX(location.x());
             double y = screenZ(location.z());
-            if (x < 4 || x > mapRight() + 4 || y < HEADER - 4 || y > mapBottom() + 4) {
+            if (x < -32 || x > mapRight() + 32 || y < HEADER - 32 || y > mapBottom() + 32) {
                 continue;
             }
             int markerX = stablePixel(x);
@@ -454,38 +321,36 @@ public final class ContainerMapScreen extends Screen {
             boolean highlighted = highlightedRoots.contains(row.container().id());
             int color = active ? 0xFFFFD36B : highlighted ? 0xFF72E7B2 : 0xFF8EB7D9;
 
-            int radius;
-            if (zoom >= ICON_LOD_ZOOM) {
-                radius = renderOverviewContainerVisual(graphics, row, markerX, markerY, color);
-            } else {
-                radius = 4;
-                graphics.fill(markerX - radius, markerY - radius,
-                        markerX + radius + 1, markerY + radius + 1, color);
-            }
-            markers.add(new Hit(markerX - radius - 3, markerY - radius - 3,
-                    markerX + radius + 4, markerY + radius + 4, List.of(row)));
+            markers.add(renderOverviewContainerVisual(graphics, row, markerX, markerY, color));
         }
         hits = List.copyOf(markers);
     }
 
-    private int renderOverviewContainerVisual(GuiGraphics graphics, ContainerOverview.RootRow row,
+    private Hit renderOverviewContainerVisual(GuiGraphics graphics, ContainerOverview.RootRow row,
                                               int x, int y, int outlineColor) {
-        ContainerVisualResolver.ContainerBlockVisual visual = visualResolver.resolve(row);
-        float iconSize = (float) Math.max(8.0, Math.min(14.0, zoom * 1.6));
-        int radius = Math.max(4, Math.round(iconSize / 2));
-        if (!visual.icon().isEmpty()) {
+        var visual = cachedVisual(row);
+        var bounds = visual.structure().bounds();
+        float iconSize = zoom >= ICON_LOD_ZOOM
+                ? (float) Math.max(8.0, Math.min(14.0, zoom * 1.6)) : 8.0F;
+        int left = stablePixel(x + (bounds.minX - 0.5) * iconSize);
+        int top = stablePixel(y + (bounds.minZ - 0.5) * iconSize);
+        int right = stablePixel(x + (bounds.maxX - 0.5) * iconSize);
+        int bottom = stablePixel(y + (bounds.maxZ - 0.5) * iconSize);
+        if (zoom >= ICON_LOD_ZOOM && !visual.icon().isEmpty()) {
             float scale = iconSize / 16.0F;
             PoseStack pose = graphics.pose();
-            pose.pushPose();
-            pose.translate(x, y, 120);
-            pose.scale(scale, scale, 1.0F);
-            graphics.renderItem(visual.icon(), -8, -8);
-            pose.popPose();
+            for (var part : visual.structure().parts()) {
+                pose.pushPose();
+                pose.translate(x + part.offset().getX() * iconSize, y + part.offset().getZ() * iconSize, 120);
+                pose.scale(scale, scale, 1.0F);
+                graphics.renderItem(visual.icon(), -8, -8);
+                pose.popPose();
+            }
         } else {
-            graphics.fill(x - radius + 1, y - radius + 1, x + radius, y + radius, 0xFF617789);
+            graphics.fill(left, top, right + 1, bottom + 1, outlineColor);
         }
-        drawFrame(graphics, x - radius, y - radius, x + radius, y + radius, outlineColor);
-        return radius;
+        drawFrame(graphics, left, top, right, bottom, outlineColor);
+        return new Hit(left - 3, top - 3, right + 4, bottom + 4, List.of(row));
     }
 
     private void renderRoute(GuiGraphics graphics) {
@@ -506,8 +371,8 @@ public final class ContainerMapScreen extends Screen {
             WorldLocation to = orderedRouteStops.get(index);
             if (from.scope().equals(to.scope()) && from.dimension().equals(to.dimension())
                     && to.dimension().equals(dimension)) {
-                drawDottedLine(graphics, (int) screenX(from.x()), (int) screenZ(from.z()),
-                        (int) screenX(to.x()), (int) screenZ(to.z()), 0xFFEDC877, 7);
+                drawDottedLine(graphics, screenX(from.x()), screenZ(from.z()),
+                        screenX(to.x()), screenZ(to.z()), 0xFFEDC877, 7);
             }
             from = WorldPosition.at(to);
         }
@@ -556,8 +421,8 @@ public final class ContainerMapScreen extends Screen {
                     }
                     continue;
                 }
-                drawDottedLine(graphics, (int) screenX(from.x()), (int) screenZ(from.z()),
-                        (int) screenX(to.x()), (int) screenZ(to.z()), color, 2);
+                drawDottedLine(graphics, screenX(from.x()), screenZ(from.z()),
+                        screenX(to.x()), screenZ(to.z()), color, 2);
             }
         }
     }
@@ -575,24 +440,24 @@ public final class ContainerMapScreen extends Screen {
             localCamera.reset();
         }
 
-        Set<ContainerId> planRoots = new HashSet<>();
-        routePlan.picks().forEach(pick -> planRoots.add(pick.source().rootContainer().id()));
         List<ContainerOverview.RootRow> rows = localRows(anchor);
-        renderLocalScene(graphics, anchor, rows, planRoots);
 
         List<Hit> markers = new ArrayList<>();
+        List<ContainerOverview.RootRow> visibleRows = new ArrayList<>();
         for (ContainerOverview.RootRow row : rows) {
             WorldLocation location = (WorldLocation) row.container().location();
-            ProjectedBounds bounds = projectLocalBlock(location, anchor);
+            ProjectedBounds bounds = projectLocalBlock(location, anchor, cachedVisual(row));
             if (bounds.right() < 8 || bounds.left() > mapRight()
                     || bounds.bottom() < HEADER || bounds.top() > mapBottom()) {
                 continue;
             }
+            visibleRows.add(row);
             markers.add(new Hit((int) Math.floor(bounds.left()) - 3,
                     (int) Math.floor(bounds.top()) - 3,
                     (int) Math.ceil(bounds.right()) + 4,
                     (int) Math.ceil(bounds.bottom()) + 4, List.of(row)));
         }
+        renderLocalScene(graphics, anchor, visibleRows, plannedRoots);
         hits = List.copyOf(markers);
         renderLocalNavigationOverlay(graphics, anchor);
         graphics.drawString(font, Component.translatable("gui.litemfinder.map.y_layer", layerY),
@@ -618,28 +483,33 @@ public final class ContainerMapScreen extends Screen {
         RenderSystem.enableDepthTest();
         for (ContainerOverview.RootRow row : rows) {
             WorldLocation location = (WorldLocation) row.container().location();
-            ContainerVisualResolver.ContainerBlockVisual visual = visualResolver.resolve(row);
-            pose.pushPose();
-            pose.translate(location.x() - anchor.x(), location.y() - anchor.y(), location.z() - anchor.z());
-            try {
-                minecraft.getBlockRenderer().renderSingleBlock(visual.state(), pose, bufferSource,
-                        LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
-            } catch (RuntimeException renderFailure) {
-                LOGGER.debug("Could not render container block {} on map", visual.block(), renderFailure);
+            var visual = cachedVisual(row);
+            for (var part : visual.structure().parts()) {
+                pose.pushPose();
+                pose.translate(location.x() - anchor.x() + part.offset().getX(),
+                        location.y() - anchor.y() + part.offset().getY(),
+                        location.z() - anchor.z() + part.offset().getZ());
+                try {
+                    sceneRenderer.render(minecraft, part.state(), pose, bufferSource);
+                } catch (RuntimeException renderFailure) {
+                    LOGGER.debug("Could not render container block {} on map", visual.block(), renderFailure);
+                }
+                pose.popPose();
             }
-            pose.popPose();
         }
 
         VertexConsumer lines = bufferSource.getBuffer(RenderType.lines());
         for (ContainerOverview.RootRow row : rows) {
             WorldLocation location = (WorldLocation) row.container().location();
             int color = localOutlineColor(row, planRoots);
+            var bounds = cachedVisual(row).structure().bounds();
             pose.pushPose();
             pose.translate(location.x() - anchor.x(), location.y() - anchor.y(), location.z() - anchor.z());
             LevelRenderer.renderLineBox(pose, lines,
-                    -LOCAL_OUTLINE_EXPANSION, -LOCAL_OUTLINE_EXPANSION, -LOCAL_OUTLINE_EXPANSION,
-                    1.0 + LOCAL_OUTLINE_EXPANSION, 1.0 + LOCAL_OUTLINE_EXPANSION,
-                    1.0 + LOCAL_OUTLINE_EXPANSION,
+                    bounds.minX - LOCAL_OUTLINE_EXPANSION, bounds.minY - LOCAL_OUTLINE_EXPANSION,
+                    bounds.minZ - LOCAL_OUTLINE_EXPANSION,
+                    bounds.maxX + LOCAL_OUTLINE_EXPANSION, bounds.maxY + LOCAL_OUTLINE_EXPANSION,
+                    bounds.maxZ + LOCAL_OUTLINE_EXPANSION,
                     colorChannel(color, 16), colorChannel(color, 8), colorChannel(color, 0),
                     colorChannel(color, 24));
             pose.popPose();
@@ -655,16 +525,22 @@ public final class ContainerMapScreen extends Screen {
                 : planRoots.contains(row.container().id()) ? 0xFF74CDEB : 0xB08EB7D9;
     }
 
-    private ProjectedBounds projectLocalBlock(WorldLocation location, WorldLocation anchor) {
+    private ContainerVisualResolver.ContainerBlockVisual cachedVisual(ContainerOverview.RootRow row) {
+        return localVisuals.computeIfAbsent(row.container().id(), ignored -> visualResolver.resolve(row));
+    }
+
+    private ProjectedBounds projectLocalBlock(WorldLocation location, WorldLocation anchor,
+                                              ContainerVisualResolver.ContainerBlockVisual visual) {
         double left = Double.POSITIVE_INFINITY;
         double top = Double.POSITIVE_INFINITY;
         double right = Double.NEGATIVE_INFINITY;
         double bottom = Double.NEGATIVE_INFINITY;
+        var bounds = visual.structure().bounds();
         for (int corner = 0; corner < 8; corner++) {
             ContainerMap3DCamera.ProjectedPoint point = projectLocal(
-                    location.x() + (corner & 1),
-                    location.y() + ((corner >> 1) & 1),
-                    location.z() + ((corner >> 2) & 1), anchor);
+                    location.x() + ((corner & 1) == 0 ? bounds.minX : bounds.maxX),
+                    location.y() + ((corner & 2) == 0 ? bounds.minY : bounds.maxY),
+                    location.z() + ((corner & 4) == 0 ? bounds.minZ : bounds.maxZ), anchor);
             left = Math.min(left, point.x());
             top = Math.min(top, point.y());
             right = Math.max(right, point.x());
@@ -711,8 +587,7 @@ public final class ContainerMapScreen extends Screen {
                 ContainerMap3DCamera.ProjectedPoint fromPoint = projectLocal(from.x(), from.y(), from.z(), anchor);
                 ContainerMap3DCamera.ProjectedPoint toPoint = projectLocal(to.x(), to.y(), to.z(), anchor);
                 drawDottedLine(graphics,
-                        (int) Math.round(fromPoint.x()), (int) Math.round(fromPoint.y()),
-                        (int) Math.round(toPoint.x()), (int) Math.round(toPoint.y()),
+                        fromPoint.x(), fromPoint.y(), toPoint.x(), toPoint.y(),
                         routeColor(segment.mode()), 2);
             }
         }
@@ -764,13 +639,19 @@ public final class ContainerMapScreen extends Screen {
             contentsButton.visible = false;
         }
         int logicalY = Math.max(y + 10, HEADER + 121);
+        groupButton.visible = !storageGroups.isEmpty();
+        if (groupButton.visible) {
+            groupButton.setX(left);
+            groupButton.setY(logicalY);
+            logicalY += 28;
+        }
         graphics.drawString(font, Component.translatable("gui.litemfinder.map.logical"),
                 left, logicalY, 0xFFF2F4F6);
         List<Hit> sidebar = new ArrayList<>();
         logicalY += 17;
-        for (ContainerOverview.RootRow logical : overview.roots()) {
-            if (logical.container().location() instanceof WorldLocation || logicalY + 14 >= mapBottom()) {
-                continue;
+        for (ContainerOverview.RootRow logical : logicalRoots) {
+            if (logicalY + 14 >= mapBottom()) {
+                break;
             }
             String label = logical.container().type().id().path() + " " + logical.occupiedSlots();
             graphics.drawString(font, font.plainSubstrByWidth(label, PANEL_WIDTH - 18),
@@ -904,21 +785,37 @@ public final class ContainerMapScreen extends Screen {
     @Override
     public void onClose() {
         navigationRequestId++;
-        terrainSampler.clear();
+        localVisuals.clear();
+        visualResolver.clear();
+        sceneRenderer.clear();
         if (minecraft != null) {
             minecraft.setScreen(parent);
         }
     }
 
     private void refresh() {
-        overview = api.containerOverview();
-        routePlan = api.plan(draft.selections());
+        ContainerOverview updated = api.containerOverview();
+        boolean inventoryChanged = !overview.equals(updated);
+        if (inventoryChanged) {
+            overview = updated;
+            storageGroups = overview.groups();
+            if (storageGroups.stream().noneMatch(group -> group.id().equals(storageGroup))) storageGroup = null;
+            storageGroupMembers = storageGroups.stream().filter(group -> group.id().equals(storageGroup))
+                    .findFirst().map(group -> Set.copyOf(group.members())).orElse(Set.of());
+            cacheRootRows();
+        }
+        Map<ItemKey, Long> selections = draft.selections();
+        if (inventoryChanged || !plannedSelections.equals(selections)) {
+            // An empty acquisition draft needs no full inventory search.
+            routePlan = selections.isEmpty()
+                    ? new AcquisitionPlan(List.of(), Map.of()) : api.plan(selections);
+            plannedSelections = selections;
+            plannedRoots = routePlan.picks().stream().map(pick -> pick.source().rootContainer().id())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        }
+        localVisuals.clear();
         refreshNavigation();
-        dimensions = overview.roots().stream()
-                .map(row -> row.container().location())
-                .filter(WorldLocation.class::isInstance)
-                .map(location -> ((WorldLocation) location).dimension())
-                .distinct().sorted().toList();
+        dimensions = rootsByDimension.keySet().stream().sorted().toList();
         if (dimension == null || !dimensions.contains(dimension)) {
             NamespacedId playerDimension = minecraft != null && minecraft.level != null
                     ? NamespacedId.parse(minecraft.level.dimension().location().toString()) : null;
@@ -933,18 +830,48 @@ public final class ContainerMapScreen extends Screen {
             localDragButton = -1;
         }
         if (!initializedView) {
+            if (selectedRow() != null && selectedRow().container().location() instanceof WorldLocation focus) {
+                dimension = focus.dimension();
+                layerY = focus.y();
+            }
             fitView();
             initializedView = true;
         }
-        refreshHighlights();
+        if (inventoryChanged) {
+            refreshHighlights();
+        }
         updateButtons();
+    }
+
+    private void cacheRootRows() {
+        Map<NamespacedId, List<ContainerOverview.RootRow>> byDimension = new HashMap<>();
+        Map<ContainerId, ContainerOverview.RootRow> byId = new HashMap<>();
+        List<ContainerOverview.RootRow> logical = new ArrayList<>();
+        for (ContainerOverview.RootRow row : overview.roots()) {
+            if (storageGroup != null && !storageGroupMembers.contains(row.container().id())) continue;
+            byId.put(row.container().id(), row);
+            if (row.container().location() instanceof WorldLocation world) {
+                byDimension.computeIfAbsent(world.dimension(), ignored -> new ArrayList<>()).add(row);
+            } else {
+                logical.add(row);
+            }
+        }
+        byDimension.replaceAll((key, rows) -> rows.stream()
+                .sorted(Comparator.comparing(row -> row.container().id())).toList());
+        rootsByDimension = Map.copyOf(byDimension);
+        rootsById = Map.copyOf(byId);
+        logicalRoots = List.copyOf(logical);
     }
 
     private void refreshNavigation() {
         List<WorldLocation> sourceStops = sourceStops();
-        routeOrigin = playerOrigin(sourceStops);
-        orderedRouteStops = routeOrigin == null
-                ? sourceStops : ContainerRouteOptimizer.order(routeOrigin, sourceStops);
+        WorldPosition originNow = playerOrigin(sourceStops);
+        if (!Objects.equals(routeOrigin, originNow) || !lastRouteSourceStops.equals(sourceStops)) {
+            routeOrigin = originNow;
+            lastRouteSourceStops = sourceStops;
+            orderedRouteStops = routeOrigin == null
+                    ? sourceStops : ContainerRouteOptimizer.order(routeOrigin, sourceStops);
+        }
 
         if (navigation.isPresent() && routeOrigin != null && !orderedRouteStops.isEmpty()) {
             WorldPosition origin = routeOrigin;
@@ -994,14 +921,21 @@ public final class ContainerMapScreen extends Screen {
         lastNavigationOrigin = null;
     }
 
+    private void cycleStorageGroup() {
+        int current = -1;
+        for (int index = 0; index < storageGroups.size(); index++) if (storageGroups.get(index).id().equals(storageGroup)) current = index;
+        int next = current + 1;
+        storageGroup = next >= storageGroups.size() ? null : storageGroups.get(next).id();
+        storageGroupMembers = storageGroup == null ? Set.of() : Set.copyOf(storageGroups.get(next).members());
+        selected = null;
+        initializedView = false;
+        cacheRootRows();
+        refresh();
+    }
+
     private List<WorldLocation> sourceStops() {
-        Set<ContainerId> seen = new HashSet<>();
-        return routePlan.picks().stream()
-                .filter(pick -> seen.add(pick.source().rootContainer().id()))
-                .map(pick -> pick.source().rootContainer().location())
-                .filter(WorldLocation.class::isInstance)
-                .map(WorldLocation.class::cast)
-                .toList();
+        Set<ContainerId> targets = explicitTargets.isEmpty() ? plannedRoots : explicitTargets;
+        return dev.litemfinder.neoforge.client.view.RecordedSourceLocations.resolve(overview, targets);
     }
 
     private WorldPosition playerOrigin(List<WorldLocation> stops) {
@@ -1020,7 +954,7 @@ public final class ContainerMapScreen extends Screen {
         }
         String query = searchBox.getValue().trim();
         if (query.isEmpty() && highlightedItem == null) {
-            highlightedRoots = Set.of();
+            highlightedRoots = explicitTargets;
             return;
         }
         Set<ContainerId> roots = new HashSet<>();
@@ -1036,6 +970,10 @@ public final class ContainerMapScreen extends Screen {
 
     private void fitView() {
         List<ContainerOverview.RootRow> rows = worldRoots();
+        if (!explicitTargets.isEmpty()) {
+            var targets = rows.stream().filter(row -> explicitTargets.contains(row.container().id())).toList();
+            if (!targets.isEmpty()) rows = targets;
+        }
         if (rows.isEmpty()) {
             centerX = 0;
             centerZ = 0;
@@ -1127,19 +1065,21 @@ public final class ContainerMapScreen extends Screen {
         modeButton.active = localView || !worldRoots().isEmpty();
         lowerButton.visible = localView;
         upperButton.visible = localView;
+        if (groupButton != null) {
+            String name = storageGroups.stream().filter(group -> group.id().equals(storageGroup))
+                    .findFirst().map(ContainerOverview.GroupRow::name)
+                    .orElse(Component.translatable("gui.litemfinder.groups.all").getString());
+            groupButton.setMessage(Component.translatable("gui.litemfinder.groups.select", name));
+            groupButton.visible = !storageGroups.isEmpty();
+        }
     }
 
     private List<ContainerOverview.RootRow> worldRoots() {
-        return overview.roots().stream()
-                .filter(row -> row.container().location() instanceof WorldLocation world
-                        && world.dimension().equals(dimension))
-                .sorted(Comparator.comparing(row -> row.container().id()))
-                .toList();
+        return dimension == null ? List.of() : rootsByDimension.getOrDefault(dimension, List.of());
     }
 
     private ContainerOverview.RootRow selectedRow() {
-        return overview.roots().stream().filter(row -> row.container().id().equals(selected))
-                .findFirst().orElse(null);
+        return selected == null ? null : rootsById.get(selected);
     }
 
     private int mapRight() {
@@ -1180,15 +1120,21 @@ public final class ContainerMapScreen extends Screen {
         graphics.vLine(right, top, bottom, color);
     }
 
-    private static void drawDottedLine(GuiGraphics graphics, int x1, int y1, int x2, int y2,
+    private void drawDottedLine(GuiGraphics graphics, double x1, double y1, double x2, double y2,
                                        int color, int spacing) {
-        int steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+        var clipped = MapLineClipper.clip(x1, y1, x2, y2, 8, HEADER, mapRight(), mapBottom());
+        if (clipped.isEmpty()) {
+            return;
+        }
+        var line = clipped.orElseThrow();
+        int steps = (int) Math.ceil(Math.max(Math.abs(line.x2() - line.x1()),
+                Math.abs(line.y2() - line.y1())));
         if (steps == 0) {
             return;
         }
-        for (int i = 0; i <= steps && i < 4096; i += spacing) {
-            int x = (int) Math.round(x1 + (x2 - x1) * (i / (double) steps));
-            int y = (int) Math.round(y1 + (y2 - y1) * (i / (double) steps));
+        for (int i = 0; i <= steps; i += spacing) {
+            int x = (int) Math.round(line.x1() + (line.x2() - line.x1()) * (i / (double) steps));
+            int y = (int) Math.round(line.y1() + (line.y2() - line.y1()) * (i / (double) steps));
             graphics.fill(x - 1, y - 1, x + 2, y + 2, color);
         }
     }
@@ -1210,8 +1156,5 @@ public final class ContainerMapScreen extends Screen {
     }
 
     private record ProjectedBounds(double left, double top, double right, double bottom) {
-    }
-
-    private record ContourPoint(double x, double y) {
     }
 }

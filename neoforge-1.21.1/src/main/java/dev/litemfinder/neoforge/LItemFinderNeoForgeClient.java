@@ -3,6 +3,9 @@ package dev.litemfinder.neoforge;
 import com.mojang.logging.LogUtils;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.litemfinder.neoforge.capture.ClientMenuCaptureCoordinator;
+import dev.litemfinder.neoforge.capture.ClientBlockInventoryCaptureCoordinator;
+import dev.litemfinder.neoforge.capture.BlockCaptureRequest;
+import dev.litemfinder.neoforge.capture.CaptureReason;
 import dev.litemfinder.neoforge.capture.ClientPlayerInventoryCaptureCoordinator;
 import dev.litemfinder.neoforge.capture.MenuCaptureRequest;
 import dev.litemfinder.neoforge.capture.MenuFingerprintCalculator;
@@ -20,6 +23,7 @@ import dev.litemfinder.neoforge.identity.MinecraftScopeResolver;
 import dev.litemfinder.neoforge.lifecycle.BlockContainerRemovalMonitor;
 import dev.litemfinder.neoforge.mapping.CachedItemTagResolver;
 import dev.litemfinder.neoforge.mapping.MenuSnapshotMapper;
+import dev.litemfinder.neoforge.mapping.NestedItemContentsReader;
 import dev.litemfinder.neoforge.persistence.SnapshotStorageCoordinator;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
@@ -60,7 +64,8 @@ public final class LItemFinderNeoForgeClient {
             "key.categories.litemfinder"
     );
     private final CachedItemTagResolver itemTags = new CachedItemTagResolver();
-    private final MenuSnapshotMapper snapshots = new MenuSnapshotMapper(itemTags);
+    private final NestedItemContentsReader nestedContents = new NestedItemContentsReader();
+    private final MenuSnapshotMapper snapshots = new MenuSnapshotMapper(itemTags, nestedContents);
     private final SnapshotStorageCoordinator storage;
     private final CaptureDiagnostics diagnostics = new CaptureDiagnostics();
     private final ItemFinderClientApi clientApi;
@@ -69,6 +74,9 @@ public final class LItemFinderNeoForgeClient {
     private final RecentInteractionTracker interactions;
     private final ClientMenuCaptureCoordinator captures;
     private final ClientPlayerInventoryCaptureCoordinator playerInventoryCaptures;
+    private final dev.litemfinder.neoforge.capture.ClientTerminalCaptureCoordinator terminalCaptures;
+    private final ClientBlockInventoryCaptureCoordinator blockInventoryCaptures;
+    private final dev.litemfinder.neoforge.capture.ClientFluidInventoryCaptureCoordinator aimedFluids;
     private final BlockContainerRemovalMonitor removals;
     private boolean openOverviewRequested;
 
@@ -82,7 +90,7 @@ public final class LItemFinderNeoForgeClient {
                 new MinecraftScopeResolver(),
                 interactions,
                 new VanillaMenuSlotPartitioner(true),
-                new MenuFingerprintCalculator(),
+                new MenuFingerprintCalculator(nestedContents),
                 diagnostics,
                 this::storeCapture
         );
@@ -90,11 +98,16 @@ public final class LItemFinderNeoForgeClient {
                 new MinecraftScopeResolver(),
                 new MinecraftContainerIdentityResolver(),
                 new VanillaMenuSlotPartitioner(true),
-                new MenuFingerprintCalculator(),
+                new MenuFingerprintCalculator(nestedContents),
                 diagnostics,
                 this::storeCapture
         );
         removals = new BlockContainerRemovalMonitor(storage, new MinecraftScopeResolver(), diagnostics);
+        blockInventoryCaptures = new ClientBlockInventoryCaptureCoordinator(new MinecraftScopeResolver(),
+                new MinecraftContainerIdentityResolver(), this::storeBlockCapture);
+        terminalCaptures = new dev.litemfinder.neoforge.capture.ClientTerminalCaptureCoordinator(snapshots, storage);
+        aimedFluids = new dev.litemfinder.neoforge.capture.ClientFluidInventoryCaptureCoordinator(snapshot ->
+                storage.submitPartial(snapshot, java.util.Set.of(), false));
         modEventBus.addListener(this::registerReloadListeners);
         modEventBus.addListener(this::registerKeyMappings);
         NeoForge.EVENT_BUS.addListener(this::onClientLogout);
@@ -103,6 +116,7 @@ public final class LItemFinderNeoForgeClient {
         NeoForge.EVENT_BUS.addListener(this::onScreenOpening);
         NeoForge.EVENT_BUS.addListener(this::onScreenClosing);
         NeoForge.EVENT_BUS.addListener(this::onRightClickBlock);
+        NeoForge.EVENT_BUS.addListener(this::onLeftClickBlock);
         NeoForge.EVENT_BUS.addListener(this::onEntityInteract);
         NeoForge.EVENT_BUS.addListener(this::onEntityInteractSpecific);
         NeoForge.EVENT_BUS.addListener(this::onGameShuttingDown);
@@ -115,7 +129,11 @@ public final class LItemFinderNeoForgeClient {
     }
 
     private void registerReloadListeners(RegisterClientReloadListenersEvent event) {
-        event.registerReloadListener((ResourceManagerReloadListener) ignored -> itemTags.clear());
+        event.registerReloadListener((ResourceManagerReloadListener) ignored -> {
+            itemTags.clear();
+            // Marshal live contents cache invalidation back to the client thread.
+            Minecraft.getInstance().execute(nestedContents::clear);
+        });
     }
 
     private void registerKeyMappings(RegisterKeyMappingsEvent event) {
@@ -123,11 +141,15 @@ public final class LItemFinderNeoForgeClient {
     }
 
     private void onClientLogout(ClientPlayerNetworkEvent.LoggingOut event) {
+        terminalCaptures.close();
         playerInventoryCaptures.close();
         captures.close();
         itemTags.clear();
+        nestedContents.clear();
         captures.reset();
         playerInventoryCaptures.reset();
+        blockInventoryCaptures.reset();
+        aimedFluids.reset();
         removals.reset();
         acquisitionDraft.clear();
         openOverviewRequested = false;
@@ -140,7 +162,10 @@ public final class LItemFinderNeoForgeClient {
             requestOverview();
         }
         captures.clientTick(minecraft);
+        terminalCaptures.clientTick(minecraft);
         playerInventoryCaptures.clientTick(minecraft);
+        blockInventoryCaptures.clientTick(minecraft);
+        aimedFluids.clientTick(minecraft);
         removals.clientTick(minecraft);
         if (openOverviewRequested && minecraft.player != null && minecraft.screen == null) {
             openOverviewRequested = false;
@@ -157,16 +182,25 @@ public final class LItemFinderNeoForgeClient {
     }
 
     private void onScreenOpening(ScreenEvent.Opening event) {
+        terminalCaptures.screenOpened(event.getScreen(), Minecraft.getInstance());
         captures.screenOpened(event.getScreen(), Minecraft.getInstance());
     }
 
     private void onScreenClosing(ScreenEvent.Closing event) {
+        terminalCaptures.screenClosed(event.getScreen());
         captures.screenClosed(event.getScreen());
     }
 
     private void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
         if (event.getLevel().isClientSide) {
             interactions.rememberBlock(event.getLevel(), event.getPos());
+            blockInventoryCaptures.rememberBlock(event.getPos());
+        }
+    }
+
+    private void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        if (event.getLevel().isClientSide) {
+            blockInventoryCaptures.rememberBlock(event.getPos());
         }
     }
 
@@ -206,8 +240,23 @@ public final class LItemFinderNeoForgeClient {
     }
 
     private void onGameShuttingDown(GameShuttingDownEvent event) {
+        terminalCaptures.close();
         captures.close();
         playerInventoryCaptures.close();
+        blockInventoryCaptures.reset();
+        aimedFluids.reset();
         storage.close();
+    }
+
+    private void storeBlockCapture(BlockCaptureRequest request) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) return;
+        try {
+            var snapshot = snapshots.map(request, minecraft.level.registryAccess(), Instant.now());
+            storage.submit(snapshot, request.identity().persistable());
+            diagnostics.captured(CaptureReason.BLOCK_OBSERVED);
+        } catch (RuntimeException exception) {
+            LOGGER.error("Failed to map block inventory {}", request.identity().container().id(), exception);
+        }
     }
 }
