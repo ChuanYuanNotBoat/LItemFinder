@@ -2,7 +2,7 @@ package dev.litemfinder.neoforge.compat;
 
 import dev.litemfinder.neoforge.api.inventory.FluidInventory;
 import dev.litemfinder.neoforge.capture.*;
-import dev.litemfinder.neoforge.client.view.*;
+import dev.litemfinder.core.view.*;
 import dev.litemfinder.neoforge.identity.ContainerIdentityFactory;
 import dev.litemfinder.neoforge.mapping.*;
 import net.minecraft.core.*;

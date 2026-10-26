@@ -1,5 +1,7 @@
 package dev.litemfinder.neoforge.capture;
 
+import dev.litemfinder.core.snapshot.FluidSnapshotMetadata;
+
 import dev.litemfinder.core.model.*;
 import dev.litemfinder.neoforge.api.inventory.*;
 import dev.litemfinder.neoforge.mapping.FluidInventoryMetadata;
@@ -46,12 +48,12 @@ class ClientFluidInventoryCaptureCoordinatorTest {
         read.set(Optional.of(inventory(master, 0)));
         capture.observe("world", level, dummy);
         assertEquals(2, captured.size());
-        assertEquals(0, FluidInventoryMetadata.read(captured.getLast().container().metadata()).orElseThrow().tanks().getFirst().amount());
+        assertEquals(0, FluidSnapshotMetadata.read(captured.getLast().container().metadata()).orElseThrow().tanks().getFirst().amount());
         var previous = new InventorySnapshot(captured.getFirst().container(), 4, Instant.EPOCH,
                 List.of(new SlotSnapshot(0, new ItemStackInfo(ItemKey.parse("minecraft:coal"), 16))));
         var merged = PartialSnapshotMerger.merge(previous, captured.getLast(), Set.of(), false).orElseThrow();
         assertEquals(previous.slots(), merged.slots(), "aiming at a tank cannot clear unobserved item slots");
-        assertEquals(0, FluidInventoryMetadata.read(merged.container().metadata()).orElseThrow().tanks().getFirst().amount());
+        assertEquals(0, FluidSnapshotMetadata.read(merged.container().metadata()).orElseThrow().tanks().getFirst().amount());
         clearInvocations(level);
         when(level.hasChunk(anyInt(), anyInt())).thenReturn(false);
         capture.observe("world", level, master);

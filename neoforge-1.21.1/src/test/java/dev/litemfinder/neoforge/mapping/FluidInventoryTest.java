@@ -1,11 +1,13 @@
 package dev.litemfinder.neoforge.mapping;
 
+import dev.litemfinder.core.snapshot.FluidSnapshotMetadata;
+
 import dev.litemfinder.core.model.*;
 import dev.litemfinder.neoforge.api.inventory.*;
 import dev.litemfinder.neoforge.capture.*;
-import dev.litemfinder.neoforge.client.view.ContainerOverview;
-import dev.litemfinder.neoforge.client.view.FluidOverview;
-import dev.litemfinder.neoforge.client.view.FluidQuantityFormat;
+import dev.litemfinder.core.view.ContainerOverview;
+import dev.litemfinder.core.view.FluidOverview;
+import dev.litemfinder.core.view.FluidQuantityFormat;
 import dev.litemfinder.neoforge.identity.ContainerIdentityFactory;
 import dev.litemfinder.storage.sqlite.SqliteSnapshotRepository;
 import net.minecraft.core.BlockPos;
@@ -66,7 +68,7 @@ class FluidInventoryTest {
                     1, 64, 2, NamespacedId.parse("tfc:barrel"));
             var mapper = new MenuSnapshotMapper(new CachedItemTagResolver());
             var first = mapper.map(new MenuCaptureRequest(identity, menu, partition, filled, CaptureReason.OPEN_STABLE), registries, Instant.EPOCH);
-            var fluid = FluidInventoryMetadata.read(first.container().metadata()).orElseThrow();
+            var fluid = FluidSnapshotMetadata.read(first.container().metadata()).orElseThrow();
             assertEquals(2000, fluid.tanks().getFirst().amount());
             assertEquals(10000, fluid.tanks().getFirst().capacity());
             assertTrue(first.slots().isEmpty(), "fluid is not represented as an item stack");
@@ -75,7 +77,7 @@ class FluidInventoryTest {
             var next = mapper.map(new MenuCaptureRequest(identity, menu, partition,
                     fingerprint.calculate(menu, partition, registries), CaptureReason.CONTENT_STABLE), registries, Instant.EPOCH.plusSeconds(1));
             assertTrue(FluidOverview.from(ContainerOverview.from(List.of(next))).rows().isEmpty());
-            assertEquals(0, FluidInventoryMetadata.read(next.container().metadata()).orElseThrow().tanks().getFirst().amount());
+            assertEquals(0, FluidSnapshotMetadata.read(next.container().metadata()).orElseThrow().tanks().getFirst().amount());
         }
     }
 
@@ -90,11 +92,11 @@ class FluidInventoryTest {
         try (var repository = new SqliteSnapshotRepository(directory.resolve("fluids.db"))) {
             var restored = repository.find(record.id()).orElseThrow();
             assertEquals(snapshot, restored);
-            var read = FluidInventoryMetadata.read(restored.container().metadata()).orElseThrow();
+            var read = FluidSnapshotMetadata.read(restored.container().metadata()).orElseThrow();
             assertEquals(3_000_000_000L, read.tanks().getFirst().amount());
             var itemOnly = new InventorySnapshot(new ContainerRecord(record.id(), record.type(), record.location(),
                     Map.of("minecraftBlock", "tfc:wood/barrel/maple")), 1, Instant.EPOCH.plusSeconds(20), List.of());
-            assertEquals(Instant.EPOCH, FluidInventoryMetadata.read(FluidInventoryMetadata.preserveUnavailable(itemOnly, restored)
+            assertEquals(Instant.EPOCH, FluidSnapshotMetadata.read(FluidSnapshotMetadata.preserveUnavailable(itemOnly, restored)
                     .container().metadata()).orElseThrow().observedAt());
         }
     }

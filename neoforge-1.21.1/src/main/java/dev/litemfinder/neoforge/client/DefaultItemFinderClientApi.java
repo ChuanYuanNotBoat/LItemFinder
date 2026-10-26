@@ -7,7 +7,7 @@ import dev.litemfinder.core.search.IndexedSearchEngine;
 import dev.litemfinder.core.search.SearchQuery;
 import dev.litemfinder.core.search.SearchResponse;
 import dev.litemfinder.neoforge.client.view.InventoryOverview;
-import dev.litemfinder.neoforge.client.view.ContainerOverview;
+import dev.litemfinder.core.view.ContainerOverview;
 import dev.litemfinder.neoforge.client.view.AcquisitionPlan;
 import dev.litemfinder.neoforge.diagnostics.CaptureDiagnostics;
 import dev.litemfinder.neoforge.mapping.CachedItemTagResolver;

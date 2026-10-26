@@ -1,7 +1,7 @@
 package dev.litemfinder.neoforge.client.gui.map;
 
 import dev.litemfinder.core.model.WorldLocation;
-import dev.litemfinder.neoforge.client.view.ContainerOverview;
+import dev.litemfinder.core.view.ContainerOverview;
 import dev.litemfinder.neoforge.mapping.MinecraftBlockStateMetadata;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;

@@ -29,6 +29,13 @@ val forbiddenCoreImports = listOf(
     "net.fabricmc.",
     "net.minecraftforge.",
     "net.neoforged.",
+    "com.mojang.",
+    "dev.litemfinder.neoforge.",
+    "dev.litemfinder.storage.",
+    "net.p3pp3rf1y.",
+    "net.dries007.",
+    "blusunrize.",
+    "snownee.jade.",
     "meteordevelopment."
 )
 

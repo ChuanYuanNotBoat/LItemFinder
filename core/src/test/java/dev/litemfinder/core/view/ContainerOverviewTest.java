@@ -1,4 +1,4 @@
-package dev.litemfinder.neoforge.client.view;
+package dev.litemfinder.core.view;
 
 import dev.litemfinder.core.model.ContainerId;
 import dev.litemfinder.core.model.ContainerRecord;

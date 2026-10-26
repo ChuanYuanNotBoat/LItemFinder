@@ -6,6 +6,9 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.logging.LogUtils;
 import com.mojang.math.Axis;
 import dev.litemfinder.core.model.ContainerId;
+import dev.litemfinder.core.model.FluidKey;
+import dev.litemfinder.core.view.FluidOverview;
+import dev.litemfinder.core.view.FluidQuantityFormat;
 import dev.litemfinder.core.model.ItemKey;
 import dev.litemfinder.core.model.NamespacedId;
 import dev.litemfinder.core.model.WorldLocation;
@@ -20,7 +23,7 @@ import dev.litemfinder.neoforge.client.gui.map.MapLineClipper;
 import dev.litemfinder.neoforge.client.navigation.NavigationGateway;
 import dev.litemfinder.neoforge.client.view.AcquisitionDraft;
 import dev.litemfinder.neoforge.client.view.AcquisitionPlan;
-import dev.litemfinder.neoforge.client.view.ContainerOverview;
+import dev.litemfinder.core.view.ContainerOverview;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -67,7 +70,13 @@ public final class ContainerMapScreen extends Screen {
     private final Screen parent;
     private final ItemFinderClientApi api;
     private final AcquisitionDraft draft;
-    private final Set<ContainerId> explicitTargets;
+    private Set<ContainerId> explicitTargets;
+    private boolean fluidView;
+    private FluidKey highlightedFluid;
+    private ContainerId fluidRoot;
+    private Map<ContainerId, FluidOverview> fluidsByRoot = Map.of();
+    private final FluidVisualResolver fluidVisuals = new FluidVisualResolver();
+    private Button itemsTab, fluidsTab;
     private final ContainerVisualResolver visualResolver = new ContainerVisualResolver();
     private final ContainerSceneRenderer sceneRenderer = new ContainerSceneRenderer();
     private final ContainerMap3DCamera localCamera = new ContainerMap3DCamera();
@@ -128,10 +137,12 @@ public final class ContainerMapScreen extends Screen {
         this(parent, api, draft, highlightedItem, Set.of(), null);
     }
 
-    public static ContainerMapScreen forSources(Screen parent, ItemFinderClientApi api,
-                                                Set<ContainerId> targets, ContainerId focus) {
-        ContainerId initial = focus != null ? focus : targets.stream().sorted().findFirst().orElse(null);
-        return new ContainerMapScreen(parent, api, new AcquisitionDraft(), null, targets, initial);
+    public static ContainerMapScreen forFluids(Screen parent, ItemFinderClientApi api, FluidKey fluid, ContainerId root) {
+        var screen = new ContainerMapScreen(parent, api, new AcquisitionDraft(), null, Set.of(), null);
+        screen.fluidView = true;
+        screen.highlightedFluid = fluid;
+        screen.fluidRoot = root;
+        return screen;
     }
 
     private ContainerMapScreen(Screen parent, ItemFinderClientApi api, AcquisitionDraft draft,
@@ -148,14 +159,20 @@ public final class ContainerMapScreen extends Screen {
     @Override
     protected void init() {
         sceneRenderer.clear();
+        itemsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.items"), ignored -> switchContent(false))
+                .bounds(110, 3, 46, 20).build());
+        fluidsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.fluids"), ignored -> switchContent(true))
+                .bounds(160, 3, 46, 20).build());
+        itemsTab.active = fluidView; fluidsTab.active = !fluidView;
         searchBox = addRenderableWidget(new EditBox(font, 12, 25, Math.max(70, width - 437), 18,
                 Component.translatable("gui.litemfinder.map.search")));
-        searchBox.setHint(Component.translatable("gui.litemfinder.map.search"));
+        searchBox.setHint(Component.translatable(fluidView ? "gui.litemfinder.fluids.search" : "gui.litemfinder.map.search"));
         searchBox.setMaxLength(120);
         searchBox.setValue(searchText);
         searchBox.setResponder(value -> {
             searchText = value;
             refreshHighlights();
+            refreshNavigation();
         });
         dimensionButton = addRenderableWidget(Button.builder(Component.empty(), ignored -> cycleDimension())
                 .bounds(Math.max(90, width - 352), 24, 124, 20).build());
@@ -322,6 +339,13 @@ public final class ContainerMapScreen extends Screen {
             int color = active ? 0xFFFFD36B : highlighted ? 0xFF72E7B2 : 0xFF8EB7D9;
 
             markers.add(renderOverviewContainerVisual(graphics, row, markerX, markerY, color));
+            var fluids = visibleFluids(row.container().id());
+            if (fluidView && !fluids.isEmpty() && explicitTargets.contains(row.container().id())) {
+                fluidVisuals.resolve(fluids.getFirst()).icon(graphics, markerX + 7, markerY - 8);
+                if (active || zoom >= 1.5) drawMapLabel(graphics,
+                        FluidQuantityFormat.display(fluids.getFirst().amount()) + (fluids.size() > 1 ? " +" + (fluids.size() - 1) : ""),
+                        markerX + 26, markerY - 2);
+            }
         }
         hits = List.copyOf(markers);
     }
@@ -629,6 +653,17 @@ public final class ContainerMapScreen extends Screen {
             y = panelLine(graphics, Component.translatable("gui.litemfinder.map.slots",
                     row.occupiedSlots(), row.slots()).getString(), left, y, 0xFFB8C6D2);
             y = panelLine(graphics, SnapshotTimeFormatter.format(row.observedAt()), left, y, 0xFFB8C6D2);
+            var fluids = visibleFluids(row.container().id());
+            for (int index = 0; index < Math.min(3, fluids.size()) && y + 90 < mapBottom(); index++) {
+                var fluid = fluids.get(index);
+                var visual = fluidVisuals.resolve(fluid);
+                String amount = FluidQuantityFormat.display(fluid.amount());
+                visual.icon(graphics, left, y);
+                graphics.drawString(font, font.plainSubstrByWidth(visual.name(), Math.max(16, PANEL_WIDTH - 46 - font.width(amount))),
+                        left + 20, y + 4, 0xFFE7EEF4);
+                graphics.drawString(font, amount, width - 12 - font.width(amount), y + 4, 0xFFB9E3B7);
+                y += 20;
+            }
             contentsButton.visible = true;
             contentsButton.setX(left);
             contentsButton.setY(y + 1);
@@ -798,6 +833,7 @@ public final class ContainerMapScreen extends Screen {
         boolean inventoryChanged = !overview.equals(updated);
         if (inventoryChanged) {
             overview = updated;
+            fluidsByRoot = FluidOverview.from(overview).byRoot();
             storageGroups = overview.groups();
             if (storageGroups.stream().noneMatch(group -> group.id().equals(storageGroup))) storageGroup = null;
             storageGroupMembers = storageGroups.stream().filter(group -> group.id().equals(storageGroup))
@@ -814,6 +850,11 @@ public final class ContainerMapScreen extends Screen {
                     .collect(java.util.stream.Collectors.toUnmodifiableSet());
         }
         localVisuals.clear();
+        if (inventoryChanged) refreshHighlights();
+        if (fluidView && selected == null) {
+            selected = overview.roots().stream().filter(row -> explicitTargets.contains(row.container().id())
+                    && row.container().location() instanceof WorldLocation).map(row -> row.container().id()).findFirst().orElse(null);
+        }
         refreshNavigation();
         dimensions = rootsByDimension.keySet().stream().sorted().toList();
         if (dimension == null || !dimensions.contains(dimension)) {
@@ -934,8 +975,8 @@ public final class ContainerMapScreen extends Screen {
     }
 
     private List<WorldLocation> sourceStops() {
-        Set<ContainerId> targets = explicitTargets.isEmpty() ? plannedRoots : explicitTargets;
-        return dev.litemfinder.neoforge.client.view.RecordedSourceLocations.resolve(overview, targets);
+        Set<ContainerId> targets = fluidView ? explicitTargets : plannedRoots;
+        return dev.litemfinder.core.view.RecordedSourceLocations.resolve(overview, targets);
     }
 
     private WorldPosition playerOrigin(List<WorldLocation> stops) {
@@ -953,8 +994,18 @@ public final class ContainerMapScreen extends Screen {
             return;
         }
         String query = searchBox.getValue().trim();
-        if (query.isEmpty() && highlightedItem == null) {
+        if (fluidView) {
+            String needle = query.toLowerCase(java.util.Locale.ROOT);
+            explicitTargets = fluidsByRoot.entrySet().stream()
+                    .filter(entry -> fluidRoot == null || fluidRoot.equals(entry.getKey()))
+                    .filter(entry -> entry.getValue().rows().stream().anyMatch(row -> (highlightedFluid == null || highlightedFluid.equals(row.key()))
+                            && (needle.isEmpty() || row.fluidId().contains(needle) || fluidVisuals.resolve(row).name().toLowerCase(java.util.Locale.ROOT).contains(needle))))
+                    .map(Map.Entry::getKey).collect(java.util.stream.Collectors.toUnmodifiableSet());
             highlightedRoots = explicitTargets;
+            return;
+        }
+        if (query.isEmpty() && highlightedItem == null) {
+            highlightedRoots = Set.of();
             return;
         }
         Set<ContainerId> roots = new HashSet<>();
@@ -993,6 +1044,22 @@ public final class ContainerMapScreen extends Screen {
         zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM,
                 Math.min((mapRight() - 50.0) / Math.max(16, maxX - minX + 16),
                         (mapBottom() - HEADER - 40.0) / Math.max(16, maxZ - minZ + 16))));
+    }
+
+    private List<FluidOverview.Row> visibleFluids(ContainerId root) {
+        var fluids = fluidsByRoot.get(root);
+        if (fluids == null) return List.of();
+        return fluids.rows().stream().filter(row -> !fluidView || highlightedFluid == null || highlightedFluid.equals(row.key())).toList();
+    }
+
+    private void switchContent(boolean showFluids) {
+        fluidView = showFluids;
+        if (!fluidView) explicitTargets = Set.of();
+        itemsTab.active = fluidView; fluidsTab.active = !fluidView;
+        searchBox.setHint(Component.translatable(fluidView ? "gui.litemfinder.fluids.search" : "gui.litemfinder.map.search"));
+        refreshHighlights();
+        initializedView = false;
+        refresh();
     }
 
     private void cycleDimension() {
@@ -1035,7 +1102,7 @@ public final class ContainerMapScreen extends Screen {
     private void openSelectedContents() {
         ContainerOverview.RootRow row = selectedRow();
         if (row != null && minecraft != null) {
-            minecraft.setScreen(new ContainerContentsScreen(this, api, row.container().id()));
+            minecraft.setScreen(new ContainerContentsScreen(this, api, row.container().id(), fluidView));
         }
     }
 

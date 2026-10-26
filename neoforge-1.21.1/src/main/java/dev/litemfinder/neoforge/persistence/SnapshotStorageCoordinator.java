@@ -232,13 +232,9 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
             var previous = currentIndex.rootSnapshots().stream()
                     .filter(root -> root.container().id().equals(pendingSnapshot.snapshot().container().id()))
                     .findFirst().orElse(null);
-            if (previous != null && previous.container().metadata().containsKey("lastPartialObservedAt")
-                    && snapshot.capturedAt().isBefore(java.time.Instant.parse(previous.container().metadata().get("lastPartialObservedAt")))) {
-                return;
-            }
-            snapshot = dev.litemfinder.neoforge.mapping.FluidInventoryMetadata.preserveUnavailable(snapshot, previous);
-            snapshot = PartialSnapshotMerger.retainNetwork(snapshot, previous);
-            snapshot = dev.litemfinder.neoforge.mapping.ItemFluidInventoryMetadata.preserveUnavailable(snapshot, previous);
+            previous = PartialSnapshotMerger.compatiblePrevious(previous, snapshot);
+            if (dev.litemfinder.core.snapshot.SnapshotMerger.isOutdated(previous, snapshot)) return;
+            snapshot = dev.litemfinder.core.snapshot.SnapshotMerger.retainUnavailable(snapshot, previous);
             if (pendingSnapshot.persistable()) {
                 currentRepository.save(snapshot);
             }

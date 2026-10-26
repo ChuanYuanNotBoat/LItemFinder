@@ -25,6 +25,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SnapshotStorageCoordinatorTest {
 
     @Test
+    void replacedNativeBlockDoesNotInheritOldFluidsOrStorageNetwork(@TempDir Path directory) {
+        String scope = ScopeIdFactory.singleplayer("replaced-fluid-container");
+        var first = snapshot(scope, "same-position", ItemKey.parse("minecraft:coal"), 7);
+        var metadata = new java.util.TreeMap<String, String>(java.util.Map.of("minecraftBlock", "example:first_tank", "storageNetworkId", "old-network"));
+        dev.litemfinder.core.snapshot.FluidSnapshotMetadata.writeStored(metadata,
+                new dev.litemfinder.core.snapshot.FluidSnapshotMetadata.StoredInventory(List.of(
+                        new dev.litemfinder.core.snapshot.FluidSnapshotMetadata.StoredTank(0, "example:water", "", "opaque", 2000, 10000)), Instant.EPOCH));
+        first = new InventorySnapshot(new ContainerRecord(first.container().id(), first.container().type(), first.container().location(), metadata),
+                first.slotCount(), first.capturedAt(), first.slots());
+        var next = snapshot(scope, "same-position", ItemKey.parse("minecraft:diamond"), 3, first.capturedAt().plusSeconds(1));
+        next = new InventorySnapshot(new ContainerRecord(next.container().id(), next.container().type(), next.container().location(),
+                java.util.Map.of("minecraftBlock", "example:replacement")), next.slotCount(), next.capturedAt(), next.slots());
+        try (var storage = new SnapshotStorageCoordinator(directory)) {
+            storage.submit(first, true); storage.flush();
+            storage.submit(next, true); storage.flush();
+            var stored = storage.currentIndex().rootSnapshots().getFirst();
+            assertTrue(dev.litemfinder.core.snapshot.FluidSnapshotMetadata.read(stored.container().metadata()).isEmpty());
+            assertFalse(stored.container().metadata().containsKey("storageNetworkId"));
+        }
+    }
+
+    @Test
     void persistsAndRestoresScopeIndex(@TempDir Path directory) {
         String scope = ScopeIdFactory.singleplayer("world-a");
         ItemKey diamond = ItemKey.parse("minecraft:diamond");

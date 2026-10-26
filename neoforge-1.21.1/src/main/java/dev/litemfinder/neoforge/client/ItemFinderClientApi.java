@@ -6,7 +6,7 @@ import dev.litemfinder.core.model.ItemKey;
 import dev.litemfinder.core.search.SearchQuery;
 import dev.litemfinder.core.search.SearchResponse;
 import dev.litemfinder.neoforge.client.view.InventoryOverview;
-import dev.litemfinder.neoforge.client.view.ContainerOverview;
+import dev.litemfinder.core.view.ContainerOverview;
 import dev.litemfinder.neoforge.client.view.AcquisitionPlan;
 
 import java.util.List;
@@ -29,8 +29,8 @@ public interface ItemFinderClientApi {
     /** All known root containers, including empty roots, for a future spatial map. */
     ContainerOverview containerOverview();
 
-    default dev.litemfinder.neoforge.client.view.FluidOverview fluidOverview() {
-        return dev.litemfinder.neoforge.client.view.FluidOverview.from(containerOverview());
+    default dev.litemfinder.core.view.FluidOverview fluidOverview() {
+        return dev.litemfinder.core.view.FluidOverview.from(containerOverview());
     }
 
     /** Recompute exact-variant source allocation against the current index. */

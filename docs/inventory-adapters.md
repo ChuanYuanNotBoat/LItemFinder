@@ -1,7 +1,9 @@
 # 客户端库存识别接口
 
-扩展均在 `neoforge-1.21.1` 内，Core 和 SQLite 不依赖模组 API。所有识别和活物品读取发生在
-客户端线程，完成映射后才向后台提交不可变快照。当前编译基线是 NeoForge 21.1.248。
+原生识别接口与可选模组读取位于 `neoforge-1.21.1`；观测覆盖、合并、液体记录/汇总、分组与
+位置投影由 Core 共享实现，SQLite 不依赖模组 API。所有活物品读取发生在客户端线程，完成
+映射后才向后台提交不可变快照。当前编译基线是 NeoForge 21.1.248。职责划分见
+[Core 与适配层边界](core-adapter-boundary.md)。
 
 ## 随身扩展槽位
 
@@ -70,7 +72,7 @@ StorageMenuAdapters.register(menu -> {
 `itemFluids.*` 与方块 `fluids.*` 分开保存。物品流体 capability 仅读取副本，叠放数量按件数乘算；
 精妙背包读取已经同步的 upgradeInventory，指纹包含缓存内流体变化。储罐升级拆下后从自身内容
 组件读取；已装入时按原模组行数/堆叠配置求容量，拆下时容量标为未知，不假设容量为零。
-来源保留根容器和嵌套槽位路径，液体来源列表复用容器地图的导航接口，逻辑容器不会产生世界停靠点。
+数据保留根容器和嵌套槽位路径，液体直接接入容器地图的显示与导航，逻辑容器不会产生世界停靠点。
 
 `FluidInventoryAdapter` 通过 `FluidInventoryAdapters.register(adapter)` 注册，只读取已经同步
 到客户端的实际 `IFluidHandler` 或等价数据。`FluidInventory` 由 `Tank(index, fluid, amount, capacity)`
@@ -84,12 +86,14 @@ capability 和虚拟过滤器不是实际储罐，不自动扫描或采集。
 液体数量或类型/组件变化参与打开菜单的指纹，关闭时也作最后采集；关闭后的内容属于历史观测，
 没有后台读取未加载储罐。
 
-`FluidInventoryMetadata` 将独立的版本化储罐记录存入既有 metadata：液体 ID、组件指纹、可重建
+Loader 的 `FluidInventoryMetadata` 只负责原生流体映射；Core 的 `FluidSnapshotMetadata` 将独立的
+版本化储罐记录存入既有 metadata：液体 ID、组件指纹、可重建
 显示模板、long mB 体积/容量和独立观测时间。沿用 SQLite schema v1，不制造代表液体的物品栈，
 不改变 Core 物品搜索、分类和获取计划。暂时不可读取时保留上次液体数据及其原时间；已确认排空
 则替换旧数量。储罐类型改变时不会继承旧液体。
 
-总览和内容页提供物品/液体切换，液体条读取原模组纹理和 tint。显示单位按桶数缩写：
+总览和内容页在同一页面切换物品/液体内容，列表共用行样式，液体图标读取原模组纹理和 tint。
+液体的数量、容量在行内展开，地图直接显示液体内容，不经过独立来源页。显示单位按桶数缩写：
 1000 mB = 1 B；1000 B = 1 kB；1000000 B = 1 MB；后续为 GB、TB、PB。
 `mB`（毫桶）与 `MB`（百万桶）大小写不同，缩写最多保留两位小数，悬停保留精确整数 mB。
 

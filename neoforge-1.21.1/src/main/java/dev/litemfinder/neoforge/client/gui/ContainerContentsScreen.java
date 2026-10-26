@@ -7,7 +7,7 @@ import dev.litemfinder.core.model.ItemKey;
 import dev.litemfinder.core.model.SlotSnapshot;
 import dev.litemfinder.core.model.WorldLocation;
 import dev.litemfinder.neoforge.client.ItemFinderClientApi;
-import dev.litemfinder.neoforge.client.view.ContainerOverview;
+import dev.litemfinder.core.view.ContainerOverview;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -39,6 +39,9 @@ public final class ContainerContentsScreen extends Screen {
     private final Screen parent;
     private final ItemFinderClientApi api;
     private final ContainerId rootId;
+    private final FluidInventoryPanel fluids;
+    private boolean fluidMode;
+    private Button itemsTab, fluidsTab;
     private final List<Integer> nestedPath = new ArrayList<>();
     private final Map<ItemKey, ItemVisual> visuals = new HashMap<>();
     private ContainerOverview.RootRow root;
@@ -51,10 +54,16 @@ public final class ContainerContentsScreen extends Screen {
     private java.util.Set<Integer> observedSlots;
 
     public ContainerContentsScreen(Screen parent, ItemFinderClientApi api, ContainerId rootId) {
+        this(parent, api, rootId, false);
+    }
+
+    public ContainerContentsScreen(Screen parent, ItemFinderClientApi api, ContainerId rootId, boolean fluidMode) {
         super(Component.translatable("gui.litemfinder.contents.title"));
         this.parent = Objects.requireNonNull(parent, "parent must not be null");
         this.api = Objects.requireNonNull(api, "api must not be null");
         this.rootId = Objects.requireNonNull(rootId, "rootId must not be null");
+        fluids = new FluidInventoryPanel(this, api, rootId);
+        this.fluidMode = fluidMode;
     }
 
     @Override
@@ -64,12 +73,13 @@ public final class ContainerContentsScreen extends Screen {
                 .bounds(Math.max(12, width - 132), 24, 62, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.back"), ignored -> onClose())
                 .bounds(width - 64, 24, 52, 20).build());
-        var itemsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.items"), ignored -> { })
+        itemsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.items"), ignored -> switchMode(false))
                 .bounds(100, 3, 46, 20).build());
-        itemsTab.active = false;
-        addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.fluids"), ignored -> {
-            if (minecraft != null) minecraft.setScreen(new FluidOverviewScreen(this, api, rootId));
-        }).bounds(150, 3, 46, 20).build());
+        itemsTab.active = fluidMode;
+        fluidsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.fluids"), ignored -> switchMode(true))
+                .bounds(150, 3, 46, 20).build());
+        fluidsTab.active = !fluidMode;
+        fluids.initialize(button -> addRenderableWidget(button));
         refresh();
     }
 
@@ -102,9 +112,9 @@ public final class ContainerContentsScreen extends Screen {
         String breadcrumb = breadcrumb(node);
         graphics.drawString(font, font.plainSubstrByWidth(breadcrumb, Math.max(30, width - 156)),
                 12, 31, 0xFFB8C6D2);
-        String summary = Component.translatable("gui.litemfinder.contents.summary",
-                node.contents().size(), node.slotCount()).getString();
-        if (node.container().metadata().containsKey("captureCoverage")) {
+        String summary = (fluidMode ? fluids.summary() : Component.translatable("gui.litemfinder.contents.summary",
+                node.contents().size(), node.slotCount())).getString();
+        if (!fluidMode && node.container().metadata().containsKey("captureCoverage")) {
             summary += " · " + Component.translatable("gui.litemfinder.contents.partial").getString();
         }
         boolean stale = node.observedAt().isBefore(Instant.now().minus(STALE_HINT_AFTER));
@@ -118,9 +128,16 @@ public final class ContainerContentsScreen extends Screen {
             renderStaleIndicator(graphics, staleX, staleY);
         }
 
-        renderSlots(graphics, node, mouseX, mouseY);
+        if (fluidMode) {
+            fluids.render(graphics, font, width, CONTENT_TOP, Math.max(CONTENT_TOP + 1, height - FOOTER_HEIGHT), mouseX, mouseY);
+            graphics.drawString(font, font.plainSubstrByWidth(fluids.summary().getString(), width - 24), 12, height - 20, 0xFFB8C6D2);
+        } else {
+            fluids.hideControls();
+            renderSlots(graphics, node, mouseX, mouseY);
+        }
         updateButtons();
         super.render(graphics, mouseX, mouseY, partialTick);
+        if (fluidMode) fluids.tooltip(graphics, font, mouseX, mouseY);
         if (stale && contains(mouseX, mouseY, staleX, staleY,
                 staleX + STALE_INDICATOR_SIZE, staleY + STALE_INDICATOR_SIZE)) {
             graphics.renderTooltip(font, Component.translatable("gui.litemfinder.contents.stale",
@@ -194,6 +211,7 @@ public final class ContainerContentsScreen extends Screen {
         if (button != 0) {
             return false;
         }
+        if (fluidMode) return fluids.mouseClicked(mouseX, mouseY, button);
         for (SlotHit hit : slotHits) {
             if (hit.contains(mouseX, mouseY) && hit.slot().nestedContainer().isPresent()) {
                 nestedPath.add(hit.slot().slot());
@@ -207,6 +225,7 @@ public final class ContainerContentsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
+        if (fluidMode) return fluids.mouseScrolled(mouseY, deltaY) || super.mouseScrolled(mouseX, mouseY, deltaX, deltaY);
         if (deltaY != 0 && mouseY >= CONTENT_TOP && mouseY < height - FOOTER_HEIGHT) {
             scrollRows -= (int) Math.signum(deltaY) * 2;
             PreviewNode node = currentNode();
@@ -226,6 +245,7 @@ public final class ContainerContentsScreen extends Screen {
     }
 
     private void refresh() {
+        if (fluidMode) fluids.refresh();
         root = api.containerOverview().roots().stream()
                 .filter(row -> row.container().id().equals(rootId))
                 .findFirst().orElse(null);
@@ -271,6 +291,16 @@ public final class ContainerContentsScreen extends Screen {
         if (upButton != null) {
             upButton.active = !nestedPath.isEmpty();
         }
+        fluids.scope(rootId, nestedPath);
+    }
+
+    private void switchMode(boolean showFluids) {
+        fluidMode = showFluids;
+        itemsTab.active = fluidMode;
+        fluidsTab.active = !fluidMode;
+        if (!fluidMode) fluids.hideControls();
+        updateButtons();
+        fluids.refresh();
     }
 
     private String breadcrumb(PreviewNode node) {

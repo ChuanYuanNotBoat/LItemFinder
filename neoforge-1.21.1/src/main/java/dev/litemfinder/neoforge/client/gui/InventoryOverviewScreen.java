@@ -29,12 +29,16 @@ public final class InventoryOverviewScreen extends Screen {
 
     private static final int LIST_TOP = 54;
     private static final int FOOTER_HEIGHT = 27;
-    private static final int ROW_HEIGHT = 24;
-    private static final int EDITOR_EXTRA_HEIGHT = 70;
+    private static final int ROW_HEIGHT = InventoryListStyle.ROW_HEIGHT;
+    private static final int EDITOR_EXTRA_HEIGHT = InventoryListStyle.DETAILS_HEIGHT;
     private static final int MAX_SEARCH_CHARS = 120;
 
     private final ItemFinderClientApi api;
     private final AcquisitionDraft draft;
+    private final FluidInventoryPanel fluids;
+    private boolean fluidMode;
+    private Button itemsTab, fluidsTab;
+    private String fluidSearchText = "";
     private final Map<NamespacedId, ItemVisual> visualCache = new HashMap<>();
     private final Map<NamespacedId, ItemKey> selectedVariants = new HashMap<>();
     private InventoryOverview overview = new InventoryOverview(List.of());
@@ -55,6 +59,7 @@ public final class InventoryOverviewScreen extends Screen {
         super(Component.translatable("gui.litemfinder.overview.title"));
         this.api = Objects.requireNonNull(api, "api must not be null");
         this.draft = Objects.requireNonNull(draft, "draft must not be null");
+        fluids = new FluidInventoryPanel(this, api, null);
     }
 
     @Override
@@ -63,9 +68,10 @@ public final class InventoryOverviewScreen extends Screen {
         searchBox = addRenderableWidget(new EditBox(font, 116, 27, searchWidth, 19,
                 Component.translatable("gui.litemfinder.search")));
         searchBox.setMaxLength(MAX_SEARCH_CHARS);
-        searchBox.setHint(Component.translatable("gui.litemfinder.search"));
-        searchBox.setValue(searchText);
+        searchBox.setHint(Component.translatable(fluidMode ? "gui.litemfinder.fluids.search" : "gui.litemfinder.search"));
+        searchBox.setValue(fluidMode ? fluidSearchText : searchText);
         searchBox.setResponder(value -> {
+            if (fluidMode) { fluidSearchText = value; fluids.search(value); return; }
             searchText = value;
             scroll = 0;
             rebuildFilter();
@@ -88,19 +94,19 @@ public final class InventoryOverviewScreen extends Screen {
         addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.map"), ignored -> {
             commitQuantity();
             if (minecraft != null) {
-                minecraft.setScreen(new ContainerMapScreen(this, api, draft, expanded));
+                if (fluidMode) fluids.openMap();
+                else minecraft.setScreen(new ContainerMapScreen(this, api, draft, expanded));
             }
         }).bounds(Math.max(108, width - 320), 3, 96, 20).build());
 
         quantityBox = addRenderableWidget(new EditBox(font, 0, 0, 78, 19,
                 Component.translatable("gui.litemfinder.request")));
-        var itemsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.items"), ignored -> { })
+        itemsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.items"), ignored -> switchMode(false))
                 .bounds(12, 26, 46, 20).build());
-        itemsTab.active = false;
-        addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.fluids"), ignored -> {
-            commitQuantity();
-            if (minecraft != null) minecraft.setScreen(new FluidOverviewScreen(this, api, null));
-        }).bounds(62, 26, 46, 20).build());
+        itemsTab.active = fluidMode;
+        fluidsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.fluids"), ignored -> switchMode(true))
+                .bounds(62, 26, 46, 20).build());
+        fluidsTab.active = !fluidMode;
         quantityBox.setMaxLength(32);
         quantityBox.setFilter(value -> value.isEmpty() || value.chars().allMatch(
                 character -> character >= '0' && character <= '9'));
@@ -110,6 +116,8 @@ public final class InventoryOverviewScreen extends Screen {
                 .bounds(0, 0, 20, 19).build());
         variantButton = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.variant"),
                 ignored -> cycleVariant()).bounds(0, 0, 150, 19).build());
+        fluids.initialize(button -> addRenderableWidget(button));
+        fluids.search(fluidSearchText);
 
         refreshOverview();
         layoutEditor();
@@ -130,31 +138,36 @@ public final class InventoryOverviewScreen extends Screen {
         graphics.fill(0, 0, width, LIST_TOP - 4, 0xFF1C2834);
         graphics.drawString(font, title, 12, 9, 0xFFF2F4F6);
 
-        List<UnitHit> hits = new ArrayList<>();
-        graphics.enableScissor(8, LIST_TOP, width - 8, listBottom());
-        int rowY = LIST_TOP - scroll;
-        for (InventoryOverview.ItemRow row : filteredRows) {
-            int rowHeight = rowHeight(row);
-            if (rowY + rowHeight >= LIST_TOP && rowY <= listBottom()) {
-                renderRow(graphics, row, rowY, mouseX, mouseY, hits);
+        if (fluidMode) fluids.render(graphics, font, width, LIST_TOP, listBottom(), mouseX, mouseY);
+        else {
+            fluids.hideControls();
+            List<UnitHit> hits = new ArrayList<>();
+            graphics.enableScissor(8, LIST_TOP, width - 8, listBottom());
+            int rowY = LIST_TOP - scroll;
+            for (InventoryOverview.ItemRow row : filteredRows) {
+                int rowHeight = rowHeight(row);
+                if (rowY + rowHeight >= LIST_TOP && rowY <= listBottom()) {
+                    renderRow(graphics, row, rowY, mouseX, mouseY, hits);
+                }
+                rowY += rowHeight;
             }
-            rowY += rowHeight;
+            graphics.disableScissor();
+            unitHits = List.copyOf(hits);
         }
-        graphics.disableScissor();
-        unitHits = List.copyOf(hits);
 
         graphics.fill(0, listBottom(), width, height, 0xFF1C2834);
-        String summary = Component.translatable("gui.litemfinder.summary", filteredRows.size(),
-                draft.selections().size()).getString();
+        String summary = (fluidMode ? fluids.summary() : Component.translatable("gui.litemfinder.summary", filteredRows.size(),
+                draft.selections().size())).getString();
         graphics.drawString(font, font.plainSubstrByWidth(summary, width - 24), 12,
                 height - 18, 0xFFBDCBD7);
-        if (!notice.isEmpty()) {
+        if (!fluidMode && !notice.isEmpty()) {
             graphics.drawString(font, font.plainSubstrByWidth(notice, Math.max(50, width / 2)),
                     Math.max(12, width / 2), height - 18, 0xFFFFC875);
         }
 
         layoutEditor();
         super.render(graphics, mouseX, mouseY, partialTick);
+        if (fluidMode) fluids.tooltip(graphics, font, mouseX, mouseY);
     }
 
     @Override
@@ -167,8 +180,7 @@ public final class InventoryOverviewScreen extends Screen {
         int right = width - 12;
         boolean selected = row.itemId().equals(expanded);
         boolean hovered = mouseX >= 10 && mouseX < right && mouseY >= y && mouseY < y + ROW_HEIGHT;
-        graphics.fill(10, y, right, y + ROW_HEIGHT - 1,
-                selected ? 0xFF2D4254 : hovered ? 0xFF263646 : 0xFF202C38);
+        InventoryListStyle.row(graphics, width, y, selected, hovered);
 
         ItemVisual visual = visualFor(row.itemId());
         if (!visual.stack().isEmpty()) {
@@ -192,7 +204,7 @@ public final class InventoryOverviewScreen extends Screen {
             return;
         }
         int editorY = y + ROW_HEIGHT;
-        graphics.fill(10, editorY, right, editorY + EDITOR_EXTRA_HEIGHT - 1, 0xFF243444);
+        InventoryListStyle.details(graphics, width, editorY);
         graphics.drawString(font, Component.translatable("gui.litemfinder.request"), 17,
                 editorY + 6, 0xFFE4EDF5);
         InventoryOverview.VariantRow variant = selectedVariant(row);
@@ -243,6 +255,7 @@ public final class InventoryOverviewScreen extends Screen {
         if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
+        if (fluidMode) return fluids.mouseClicked(mouseX, mouseY, button);
         if (mouseX < 10 || mouseX >= width - 12 || mouseY < LIST_TOP || mouseY >= listBottom()) {
             commitQuantity();
             return false;
@@ -270,6 +283,7 @@ public final class InventoryOverviewScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
+        if (fluidMode) return fluids.mouseScrolled(mouseY, deltaY) || super.mouseScrolled(mouseX, mouseY, deltaX, deltaY);
         if (deltaY == 0) {
             return super.mouseScrolled(mouseX, mouseY, deltaX, deltaY);
         }
@@ -302,7 +316,7 @@ public final class InventoryOverviewScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (quantityBox != null && quantityBox.isFocused()
+        if (!fluidMode && quantityBox != null && quantityBox.isFocused()
                 && (keyCode == 257 || keyCode == 335)) {
             commitQuantity();
             return true;
@@ -317,6 +331,7 @@ public final class InventoryOverviewScreen extends Screen {
     }
 
     private void refreshOverview() {
+        if (fluidMode) { fluids.refresh(); return; }
         Map<ItemKey, Long> before = draft.selections();
         overview = api.overview();
         draft.reconcile(overview);
@@ -359,6 +374,7 @@ public final class InventoryOverviewScreen extends Screen {
     }
 
     private void commitQuantity() {
+        if (fluidMode) return;
         InventoryOverview.ItemRow row = expandedRow();
         if (row == null || quantityBox == null) {
             return;
@@ -392,6 +408,7 @@ public final class InventoryOverviewScreen extends Screen {
         minusButton.visible = false;
         plusButton.visible = false;
         variantButton.visible = false;
+        if (fluidMode) return;
         int y = LIST_TOP - scroll;
         for (InventoryOverview.ItemRow row : filteredRows) {
             if (row.itemId().equals(expanded)) {
@@ -482,6 +499,19 @@ public final class InventoryOverviewScreen extends Screen {
         ItemKey next = row.variants().get((index + 1) % row.variants().size()).item();
         selectedVariants.put(row.itemId(), next);
         quantityBox.setValue(Long.toString(draft.get(next)));
+        layoutEditor();
+    }
+
+    private void switchMode(boolean showFluids) {
+        if (fluidMode == showFluids) return;
+        commitQuantity();
+        fluidMode = showFluids;
+        itemsTab.active = fluidMode;
+        fluidsTab.active = !fluidMode;
+        searchBox.setHint(Component.translatable(fluidMode ? "gui.litemfinder.fluids.search" : "gui.litemfinder.search"));
+        searchBox.setValue(fluidMode ? fluidSearchText : searchText);
+        if (!fluidMode) fluids.hideControls();
+        refreshOverview();
         layoutEditor();
     }
 

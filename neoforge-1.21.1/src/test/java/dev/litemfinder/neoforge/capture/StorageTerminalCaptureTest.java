@@ -1,8 +1,10 @@
 package dev.litemfinder.neoforge.capture;
 
+import dev.litemfinder.core.snapshot.FluidSnapshotMetadata;
+
 import dev.litemfinder.core.model.*;
 import dev.litemfinder.neoforge.api.inventory.*;
-import dev.litemfinder.neoforge.client.view.ContainerOverview;
+import dev.litemfinder.core.view.ContainerOverview;
 import dev.litemfinder.neoforge.identity.*;
 import dev.litemfinder.neoforge.mapping.*;
 import dev.litemfinder.neoforge.persistence.*;
@@ -119,7 +121,7 @@ class StorageTerminalCaptureTest {
         var second = new StorageTerminalView.Window(identity(1), 27, Map.of(), false, Optional.of(secondFluids));
         var previous = map(view("net", "tank0", first), 0);
         var next = PartialSnapshotMerger.merge(previous, map(view("net", "tank1", second), 1), Set.of(), false).orElseThrow();
-        var fluids = FluidInventoryMetadata.read(next.container().metadata()).orElseThrow();
+        var fluids = FluidSnapshotMetadata.read(next.container().metadata()).orElseThrow();
         assertEquals(2, fluids.tanks().size()); assertEquals(Instant.EPOCH, fluids.observedAt());
         assertTrue(next.slots().isEmpty());
     }

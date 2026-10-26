@@ -10,7 +10,7 @@ import java.util.stream.IntStream;
 
 /** Detached fluid observations in millibuckets. Amount is long even when the platform handler uses int. */
 public record FluidInventory(List<Tank> tanks) {
-    public static final int MAX_TANKS = 256;
+    public static final int MAX_TANKS = dev.litemfinder.core.snapshot.FluidSnapshotMetadata.MAX_TANKS;
     public FluidInventory {
         tanks = List.copyOf(tanks);
         if (tanks.size() > MAX_TANKS) throw new IllegalArgumentException("too many tanks");

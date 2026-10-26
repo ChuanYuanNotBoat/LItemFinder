@@ -1,9 +1,11 @@
 package dev.litemfinder.neoforge.mapping;
 
+import dev.litemfinder.core.snapshot.ItemFluidSnapshotMetadata;
+
 import dev.litemfinder.core.model.*;
 import dev.litemfinder.neoforge.api.inventory.FluidInventory;
 import dev.litemfinder.neoforge.capture.*;
-import dev.litemfinder.neoforge.client.view.*;
+import dev.litemfinder.core.view.*;
 import dev.litemfinder.neoforge.compat.SophisticatedBackpackContents;
 import dev.litemfinder.neoforge.identity.ContainerIdentityFactory;
 import net.minecraft.core.*;
@@ -55,13 +57,13 @@ class ItemFluidInventoryTest {
         var previous = snapshot(player, List.of(), 0);
         player.setItem(3, player.removeItemNoUpdate(0));
         available = false;
-        var incoming = ItemFluidInventoryMetadata.preserveUnavailable(snapshot(player, List.of(), 1), previous);
+        var incoming = ItemFluidSnapshotMetadata.preserveUnavailable(snapshot(player, List.of(), 1), previous);
         var row = FluidOverview.from(ContainerOverview.from(List.of(incoming))).rows().getFirst();
         assertEquals(3000, row.amount());
         assertEquals(List.of(3), row.sources().getFirst().itemPath());
         assertEquals(Instant.EPOCH, row.sources().getFirst().observedAt());
         player.setItem(3, net.minecraft.world.item.ItemStack.EMPTY);
-        var removed = ItemFluidInventoryMetadata.preserveUnavailable(snapshot(player, List.of(), 2), incoming);
+        var removed = ItemFluidSnapshotMetadata.preserveUnavailable(snapshot(player, List.of(), 2), incoming);
         assertTrue(FluidOverview.from(ContainerOverview.from(List.of(removed))).rows().isEmpty());
     }
     @Test void navigationKeepsWorldContainerAndIgnoresCarriedRootsAndMissingIds() {

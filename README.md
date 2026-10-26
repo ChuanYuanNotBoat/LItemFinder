@@ -16,7 +16,7 @@ NeoForge 1.21.1 只读采集适配器从 `0.2.0` 开始提供 release 包。
 - NeoForge `21.1.248` 或同一 1.21.1 分支的更高版本
 - Java 21
 
-将 `litemfinder-neoforge-1.21.1-0.2.0.jar` 放入客户端的 `mods` 目录即可；服务端不需要
+将 `litemfinder-neoforge-1.21.1-0.2.1.jar` 放入客户端的 `mods` 目录即可；服务端不需要
 安装。当前开发版已有库存总览、精确 variant 的会话获取计划和容器地图；按 `O`（可在按键设置中
 改绑）或输入 `/litemfinder gui` 打开。地图在未安装导航提供者时只显示停靠点示意连接线。
 
@@ -48,11 +48,12 @@ TFC 工具架及“放置的物品”同样可在瞄准或交互后记录。仅�
 （装入或拆下）及嵌套物品内已经同步的液体。准星瞄准支持的储罐也可记录，沉浸工程焦炉从 Jade
 已接收且校验通过的目标数据读取并归并到主块，读取失败保留上次数据。单位为 `mB`、`B`、
 `kB`、`MB`、`GB` 等：1 B = 1000 mB，1 kB = 1000 B，1 MB = 1000000 B，悬停查看精确 mB
-和观测时间。点击液体条目展开来源，可定位到地图并复用路线接口；随身来源保留物品槽位路径。
+和观测时间。物品/液体只切换当前页下方列表，点击液体行内展开容量等详情，地图直接显示液体内容
+并复用路线接口；随身液体保留物品槽位路径，不生成世界坐标。
 未安装导航提供者时显示停靠点示意线。液体仅作只读查询定位，不加入物品获取数量草稿。
 
-Java 21 下运行 `./gradlew release`，发布产物输出到 `build/releases/0.2.0/`，包含可安装 JAR、
-安装发布包、完整构建源码和 `SHA256SUMS`。具体变化见 [0.2.0 发布说明](docs/releases/0.2.0.md)。
+Java 21 下运行 `./gradlew release`，发布产物输出到 `build/releases/0.2.1/`，包含可安装 JAR、
+安装发布包、完整构建源码和 `SHA256SUMS`。具体变化见 [0.2.1 发布说明](docs/releases/0.2.1.md)。
 
 沉浸工程木制储物箱已通过实际 backing container 接入，排除玩家栏及无关槽位。
 另提供存储终端适配接口，按原容器身份合并可见槽位，保留未翻到页面的历史记录；由提供者确认的
@@ -95,7 +96,7 @@ Java 21 下运行 `./gradlew release`，发布产物输出到 `build/releases/0.
 
 ```text
 LItemFinder/
-├── core/              # 纯 Java 领域模型、索引、存储接口、搜索与规划
+├── core/              # 纯 Java 模型、观测合并、液体/容器投影、索引、搜索与规划
 ├── storage-sqlite/    # 独立的 SQLite 快照持久化实现
 ├── neoforge-1.21.1/   # NeoForge 1.21.1 客户端适配器
 ├── navigation-core/   # 独立的纯 Java 导航计算原型；不打入 LItemFinder 安装 JAR
@@ -118,7 +119,11 @@ Fabric、Forge 和 Meteor 仍未创建；它们会在 NeoForge 适配边界稳�
 - `core` 不得导入 Minecraft、Fabric、Forge、NeoForge 或 Meteor 类。
 - 游戏内的 `ItemStack`、容器位置、NBT/组件数据必须先由 Loader 转换为 Core 自有模型。
 - SQLite 等持久化实现依赖 Core 接口，而不是让领域对象依赖数据库或游戏类。
-- Loader 负责采集与展示；搜索、索引和规划规则留在 Core。
+- Loader 负责采集与展示；快照合并、液体汇总/位置筛选、存储分组、搜索、索引和规划规则留在 Core。
+
+新增能力优先完善通用模型和规则，再由游戏版本适配器接入。具体职责及观测协议见
+[Core 与适配层边界](docs/core-adapter-boundary.md)。物品和液体共用库存页面的搜索与导航，仅切换
+下半部分列表；地图直接显示液体内容与位置。
 
 `core` 的 `check` 任务包含一个轻量导入检查，用来尽早发现 Loader 依赖越界。
 

@@ -1,4 +1,4 @@
-package dev.litemfinder.neoforge.client.view;
+package dev.litemfinder.core.view;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
