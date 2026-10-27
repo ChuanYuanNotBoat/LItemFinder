@@ -1,9 +1,9 @@
-# LItem Finder 0.2.1
+# LItem Finder 0.2.2
 
 需要 Minecraft 1.21.1、NeoForge 21.1.248 或更高的 21.1 版本、Java 21。
 
 1. 正常退出游戏，将旧版 LItem Finder JAR 移出实例的 mods 目录并备份。
-2. 将本发布包内的 litemfinder-neoforge-1.21.1-0.2.1.jar 放入客户端 mods 目录，保持只有一个版本。
+2. 将本发布包内的 litemfinder-neoforge-1.21.1-0.2.2.jar 放入客户端 mods 目录，保持只有一个版本。
 3. 重新启动游戏。按 O 或输入 /litemfinder gui 打开库存界面。
 
 服务端无需安装。原有索引继续使用，无需清空。重新打开容器或瞄准支持的储物方块即可补充新格式信息。

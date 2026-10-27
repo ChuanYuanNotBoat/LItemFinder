@@ -176,7 +176,18 @@ BlockInventoryAdapters.register(owner -> {
 方块更新，Titanium 更新包包含已保存库存；采集器只读取收到的数据，不主动请求同步。
 
 控制器及扩展、共享末影抽屉、压缩抽屉没有被当作独立普通库存接入，避免网络代理、共享频率、
-物品换算导致重复计数。流体抽屉也不属于物品索引。新增同类模组可以注册此接口，而无需改 Core。
+物品换算导致重复计数。新增同类模组可以注册此接口，而无需改 Core。
+
+`FunctionalStorageFluidReader` 通过通用方块流体适配接口接入普通及框架 `FluidDrawerTile`。
+已核对 Functional Storage 1.5.4 / Titanium 4.0.45：`getFluidHandler()` 返回真实 `BigFluidHandler`，
+罐数来自 `getDrawerType().getSlots()` 并与 handler 的 1/2/4 个罐一致，数量/容量直接读取原模组。
+`fluidHandler` 带 Titanium `@Save`，初始更新标签包含保存数据；内容与容量变化使用 `syncObject`
+同步到客户端。采集仅读取已收到的数据，不主动发包、填充或排液。
+
+流体抽屉不产生物品槽，过滤样板和升级槽不计库存；真实清空会提交零体积，读取失败不提交更新。
+创造型 `CustomFluidTank.getFluidInTank` 会将活跃栈数量改为 `MAX_VALUE`，因此读取内容前先检查
+`isDrawerCreative()` 并跳过无限视图。控制器/代理对象不在正向类型契约中，罐数不一致时也不猜测。
+方块身份采用已有无菜单库存身份，液体记录、汇总、显示、地图与时间保留仍共用 Core 实现。
 
 TFC 4.2.9 的展示式库存通过同一接口接入，并在调用库存 getter **之前**检查方块实体注册 ID：
 只接受 `tfc:tool_rack`、`tfc:placed_item`，然后调用 `InventoryBlockEntity.getInventory()`。

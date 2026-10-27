@@ -14,7 +14,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /** Positive opt-in contracts; arbitrary unsynchronized block capabilities are never interpreted as empty. */
 public final class FluidInventoryAdapters {
     private static final CopyOnWriteArrayList<FluidInventoryAdapter> ADAPTERS = new CopyOnWriteArrayList<>();
-    private static final CopyOnWriteArrayList<dev.litemfinder.neoforge.api.inventory.BlockFluidInventoryAdapter> BLOCK_ADAPTERS = new CopyOnWriteArrayList<>();
+    private static final CopyOnWriteArrayList<dev.litemfinder.neoforge.api.inventory.BlockFluidInventoryAdapter> BLOCK_ADAPTERS =
+            new CopyOnWriteArrayList<>(java.util.List.of(new dev.litemfinder.neoforge.compat.FunctionalStorageFluidReader()));
     private FluidInventoryAdapters() { }
 
     public static AutoCloseable register(FluidInventoryAdapter adapter) {
@@ -31,16 +32,22 @@ public final class FluidInventoryAdapters {
         return () -> BLOCK_ADAPTERS.remove(adapter);
     }
     public static Optional<dev.litemfinder.neoforge.api.inventory.BlockFluidInventory> readBlock(BlockEntity owner) {
-        for (var adapter : BLOCK_ADAPTERS) {
-            try { var result = adapter.read(owner); if (result.isPresent()) return result; }
-            catch (RuntimeException | LinkageError ignored) { }
-        }
+        var registered = readRegisteredBlock(owner);
+        if (registered.isPresent()) return registered;
         var type = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(owner.getType());
         if (type != null && type.toString().equals("tfc:barrel")) {
             return read(owner).map(fluids -> new dev.litemfinder.neoforge.api.inventory.BlockFluidInventory(owner.getBlockPos(),
                     dev.litemfinder.core.model.NamespacedId.parse("tfc:barrel"), 3, fluids));
         }
         return dev.litemfinder.neoforge.compat.ImmersiveEngineeringCokeFluidReader.read(owner);
+    }
+
+    private static Optional<dev.litemfinder.neoforge.api.inventory.BlockFluidInventory> readRegisteredBlock(BlockEntity owner) {
+        for (var adapter : BLOCK_ADAPTERS) {
+            try { var result = adapter.read(owner); if (result.isPresent()) return result; }
+            catch (RuntimeException | LinkageError ignored) { }
+        }
+        return Optional.empty();
     }
 
     public static Optional<FluidInventory> read(BlockEntity owner) {
@@ -50,6 +57,8 @@ public final class FluidInventoryAdapters {
                 if (value.isPresent()) return value;
             } catch (RuntimeException | LinkageError ignored) { }
         }
+        var registered = readRegisteredBlock(owner);
+        if (registered.isPresent()) return registered.map(dev.litemfinder.neoforge.api.inventory.BlockFluidInventory::fluids);
         // TFC BarrelInventory implements DelegateFluidHandler. Its serialized inventory includes the tank,
         // and the server synchronizes it to the open menu/client block entity, including sealed barrels.
         var type = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(owner.getType());
