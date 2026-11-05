@@ -80,4 +80,14 @@
 
 实例目录内的 `repair-status.txt` 和 `repair-status.json` 是实时状态，`apply-repair.log` 保存步骤；
 `completed` 才代表安装和合并均完成。等待超时或文件被其他更新替换时停止并记录原因。
-本文创建时状态为 `waiting`，不能描述为已安装或已完成整合包验收。
+## 实际执行结果
+
+2026-11-05 22:18（+08），状态文件报告 `completed`。安装的是
+`litemfinder-neoforge-1.21.1-0.2.3-beta.1-SNAPSHOT.jar`；实例内 JAR 的 SHA-256 与已验证构建产物一致：
+`64aec83ac1fbee6a24b481809d480bc096925de3ac855ac3c0a50d52b0d811fd`。
+
+本次实际合并补回 **159 个位置、521 条历史非空槽记录**，跳过 0 条，完成后索引共 160 根。
+合并前数据库备份为 `litemfinder-backups/20261105-loss-repair-200439/live-before-apply.db`；
+旧版 0.2.2 JAR 也保存在同一案例目录。恢复位置的完整度边界仍按上文区分：39 个位置有历史槽数据，
+120 个仅恢复位置、需要重新打开容器采集。安装与合并已完成，但尚不代表整合包重启和世界内持久性验收完成；
+后续按[开发状态中的 B3](../development-status.md)核对。
