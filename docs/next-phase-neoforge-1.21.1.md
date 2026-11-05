@@ -1,7 +1,8 @@
-# 下一阶段计划：NeoForge 1.21.1 只读采集适配器
+# NeoForge 1.21.1 只读采集阶段计划（M0-M5）
 
-状态：**实施中；M0-M4 已完成，正在进行 M5 Alpha 验收**
-计划基线日期：2026-09-21
+状态（2026-10-28）：**M0-M4 已完成并有验收记录；M5 剩余验证已转入当前 beta TODO。**
+计划基线日期：2026-09-21。本页保留采集阶段的原设计与历史进度；当前功能、版本、待办和验证
+范围以[开发状态与 TODO](development-status.md)为准，不再以旧 Alpha 候选版本为发布目标。
 
 ## 1. 阶段目标
 
@@ -20,7 +21,10 @@ InventorySnapshot -> StorageIndex -> SnapshotRepository
 本阶段结束时，客户端应能记录玩家实际打开过的支持容器，在重启后恢复索引，并通过日志或
 开发调试入口验证 Core 搜索结果。此阶段只采集，不自动点击、不导航、不扫描未访问区域。
 
-## 2. 版本与工具链基线
+## 2. 原计划的版本与工具链基线
+
+下表保留 2026-09-21 的计划值。当前 NeoForge 基线已改为 21.1.248，实际版本以
+[gradle.properties](../gradle.properties)和构建脚本为准；旧验收记录仍保留其原环境。
 
 | 项目 | 计划值 | 说明 |
 | --- | --- | --- |
@@ -39,7 +43,8 @@ InventorySnapshot -> StorageIndex -> SnapshotRepository
 - [NeoForge 官方 1.21.1 ModDevGradle MDK](https://github.com/NeoForgeMDKs/MDK-1.21.1-ModDevGradle)
 - [ModDevGradle 官方项目](https://github.com/neoforged/ModDevGradle)
 
-版本号只在 M0 完成时锁定一次。本阶段中途不追逐 1.21.1 的新补丁，安全或构建阻断修复除外。
+原采集阶段不追逐 1.21.1 的新补丁。后续已为目标整合包调整 Loader 基线；日常开发与批次发布
+遵守[beta 版本与发布约定](release-policy.md)，不因完成单项任务自动升版或发布。
 
 ## 3. 模块与包结构
 
@@ -284,16 +289,18 @@ variant；原始服务器地址和存档路径只作为 SHA-256 输入，不进�
 删除命令要求显式 `clear confirm`，本阶段不制作正式 HUD。详细证据见
 [M2-M4 验收记录](validation/m2-m4-neoforge-alpha.md)。
 
-### M5 — 兼容、打包与 Alpha 验收
+### M5 — 兼容与打包验收（原 Alpha 阶段，剩余项已迁移）
 
-- [x] 完成第一批原版持久容器兼容矩阵。
-- [ ] 至少两个常见模组容器的探索性测试。
-- [ ] Windows/Linux Jar-in-Jar smoke test。
+- [x] 完成第一批原版持久容器槽位自动化覆盖及 M2-M4 中已记录的客户端场景。
 - [x] CI 编译 NeoForge 模块并运行纯 Java 测试。
 - [x] 生成带 GPL-3.0 与第三方许可证的可安装 JAR。
 - [x] 更新用户安装、数据位置和卸载说明。
 
-退出条件：满足第 12 节 Definition of Done，产物标记为 `0.2.0-alpha.1` 候选。
+剩余项：至少两个常见模组容器的探索性实机记录迁入统一 TODO 的 V1；当前 Windows/Linux
+成品 Jar-in-Jar smoke 迁入 V6。历史 Windows M0 成品启动已经验证，Linux CI 的构建/测试
+不等于 Linux 成品客户端验收。原版矩阵也不扩大到每种容器均已有实机证据。
+
+原退出条件中的 `0.2.0-alpha.1` 是历史候选目标；当前不为收尾 M5 单独创建发布，验证仍参考第 12 节。
 
 ## 12. Definition of Done
 
@@ -322,11 +329,14 @@ variant；原始服务器地址和存档路径只作为 SHA-256 输入，不进�
 - Mod 元数据明确声明客户端用途、Minecraft 1.21.1、NeoForge 版本范围和 GPL-3.0。
 - 安装 JAR 在干净的 NeoForge 1.21.1 客户端启动。
 - 不要求服务端安装，不发送自定义网络数据包。
-- README 明确数据目录、已知限制和删除索引方法。
+- README 链接使用与兼容文档，明确数据目录、已知限制和删除索引方法。
 
 ## 13. 明确非目标
 
-本阶段不实现：
+以下是原只读采集阶段的非目标，不表示当前仓库尚无 GUI。后续已有库存总览、内容预览与地图，
+当前范围见统一状态页；自动操作和真实导航仍未接入。
+
+采集阶段不实现：
 
 - 正式搜索 HUD、ESP 或路线渲染
 - 自动点击、搬运、Baritone 或 Meteor
@@ -358,4 +368,5 @@ variant；原始服务器地址和存档路径只作为 SHA-256 输入，不进�
 6. `feat(neoforge): add capture diagnostics and scope controls`
 7. `build(neoforge): package runtime dependencies for alpha`
 
-每个提交都必须保持根 `check` 可通过。M0、M3 和 M5 完成后进行阶段性推送与验收记录。
+每个提交都必须保持根 `check` 可通过，并保留对应验收记录。上述序列为历史实施参考；当前
+提交、推送和发布按用户要求及发布约定执行，不以本页作为自动发布授权。

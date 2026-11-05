@@ -1,0 +1,26 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="GPL-3.0"
+[[mods]]
+modId="litemnavigation"
+version="${mod_version}"
+displayName="LItem Navigation (beta)"
+description="Read-only walking routes through observed client world data."
+[[dependencies.litemnavigation]]
+modId="neoforge"
+type="required"
+versionRange="[${neo_version},)"
+ordering="NONE"
+side="CLIENT"
+[[dependencies.litemnavigation]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="CLIENT"
+[[dependencies.litemnavigation]]
+modId="litemfinder"
+type="optional"
+versionRange="[0,)"
+ordering="AFTER"
+side="CLIENT"

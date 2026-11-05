@@ -38,6 +38,17 @@ class SnapshotMergerTest {
         assertTrue(SnapshotMerger.merge(later, observation(7, 9, Map.of(), Set.of(0))).isEmpty());
         assertTrue(SnapshotMerger.merge(later, InventoryObservation.complete(snapshot(8, 9, Map.of()))).isEmpty());
     }
+    @Test void onlyACompleteFreshObservationClearsHistoricalRecoveryUncertainty() {
+        var recovered = snapshot(0, 9, Map.of("recoveryIncomplete", "true", "recoveryCapacityUnknown", "true",
+                "recoverySource", "historical-location-only", "captureCoverage", "PARTIAL", "observedSlots", ""));
+        var partial = SnapshotMerger.merge(recovered, observation(1, 9, Map.of(), Set.of(0), slot(0, "minecraft:coal", 4))).orElseThrow();
+        assertEquals("true", partial.container().metadata().get("recoveryIncomplete"));
+        var fresh = SnapshotMerger.merge(partial, InventoryObservation.complete(snapshot(2, 9, Map.of(), slot(0, "minecraft:coal", 8)))).orElseThrow();
+        assertEquals(8, fresh.slots().getFirst().stack().count());
+        assertFalse(fresh.container().metadata().containsKey("recoveryIncomplete"));
+        assertFalse(fresh.container().metadata().containsKey("recoveryCapacityUnknown"));
+        assertFalse(fresh.container().metadata().containsKey("recoverySource"));
+    }
     @Test void invalidCoverageAndWrongPhysicalIdentityAreRejectedAtTheCoreBoundary() {
         assertThrows(IllegalArgumentException.class, () -> observation(0, 2, Map.of(), Set.of(2)));
         assertThrows(IllegalArgumentException.class, () -> observation(0, 2, Map.of(), Set.of(0), slot(1, "minecraft:coal", 1)));

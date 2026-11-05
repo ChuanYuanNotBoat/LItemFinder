@@ -106,6 +106,8 @@ public final class NestedContainerMapper {
         Map<String, String> metadata = new TreeMap<>();
         metadata.put("nestedDepth", Integer.toString(slotPath.size()));
         metadata.put("nestedPath", pathText(slotPath));
+        metadata.putAll(contentsReader.previewMetadata(outerStack));
+        contentsReader.markUnavailable(metadata, contents.stacks(), registries);
         ItemFluidInventoryMetadata.capture(metadata, contents.stacks(), contentsReader, registries, capturedAt);
         if (truncated) {
             metadata.put("nestedTruncated", "max_depth");

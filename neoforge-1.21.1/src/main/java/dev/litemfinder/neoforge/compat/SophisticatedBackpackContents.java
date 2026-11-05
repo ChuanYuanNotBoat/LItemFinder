@@ -57,6 +57,7 @@ public final class SophisticatedBackpackContents {
     }
 
     public boolean accepts(ItemStack stack) { return identifiers.apply(stack).isPresent(); }
+    public Optional<String> identity(ItemStack stack) { return identifiers.apply(stack).map(UUID::toString); }
     public static boolean isBackpackItem(ItemStack stack) {
         for (Class<?> type = stack.getItem().getClass(); type != null; type = type.getSuperclass()) {
             if (type.getName().equals("net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackItem")) return true;
@@ -103,6 +104,19 @@ public final class SophisticatedBackpackContents {
     public void clear() {
         decoded.clear();
         decodedTanks.clear();
+    }
+
+    /** Upgrade icons are presentation metadata, never additional indexed inventory. */
+    public Map<String, String> previewMetadata(ItemStack stack) {
+        Map<String, String> result = new TreeMap<>();
+        identifiers.apply(stack).flatMap(storage).ifPresent(tag -> {
+            int index = 0;
+            for (Tag value : tag.getCompound("upgradeInventory").getList("Items", Tag.TAG_COMPOUND)) {
+                String id = ((CompoundTag) value).getString("id");
+                if (ResourceLocation.tryParse(id) != null && index < 16) result.put("previewUpgrade." + index++, id);
+            }
+        });
+        return Map.copyOf(result);
     }
 
     static Optional<UUID> backpackId(ItemStack stack) {

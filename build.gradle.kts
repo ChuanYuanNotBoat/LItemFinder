@@ -16,28 +16,44 @@ allprojects {
 val releaseVersion = version.toString()
 val releaseDirectory = layout.buildDirectory.dir("releases/$releaseVersion")
 val installableJar = layout.projectDirectory.file("neoforge-1.21.1/build/libs/litemfinder-neoforge-1.21.1-$releaseVersion.jar")
+val releaseNotes = layout.projectDirectory.file("docs/releases/$releaseVersion.md")
+
+val validateRelease by tasks.registering {
+    group = "distribution"
+    description = "Requires a prepared release version and its release notes before packaging."
+    doLast {
+        check(!releaseVersion.endsWith("-SNAPSHOT", ignoreCase = true)) {
+            "Development snapshots use check/build. Prepare a beta release version first; see docs/release-policy.md."
+        }
+        check(releaseNotes.asFile.isFile) {
+            "Missing release notes: docs/releases/$releaseVersion.md. See docs/release-policy.md."
+        }
+    }
+}
 
 val releaseSources by tasks.registering(Zip::class) {
     group = "distribution"
     description = "Archives the complete workspace sources used for this release."
+    dependsOn(validateRelease)
     archiveFileName = "litemfinder-$releaseVersion-sources.zip"
     destinationDirectory = releaseDirectory
     from(rootDir) {
         include("*.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat", "gradle/**", ".github/**", ".gitignore",
-                "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "docs/**", "release/**",
+                "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "AGENTS.md", "docs/**", "release/**",
                 "core/src/**", "core/build.gradle.kts", "storage-sqlite/src/**", "storage-sqlite/build.gradle.kts",
                 "navigation-core/src/**", "navigation-core/build.gradle.kts",
+                "navigation-neoforge-1.21.1/src/**", "navigation-neoforge-1.21.1/build.gradle.kts",
                 "neoforge-1.21.1/src/**", "neoforge-1.21.1/build.gradle.kts")
     }
 }
 val releaseBundle by tasks.registering(Zip::class) {
     group = "distribution"
-    dependsOn(":neoforge-1.21.1:jar")
+    dependsOn(validateRelease, ":neoforge-1.21.1:jar")
     archiveFileName = "litemfinder-$releaseVersion-release.zip"
     destinationDirectory = releaseDirectory
     from(installableJar)
     from("LICENSE", "THIRD_PARTY_NOTICES.md", "release/INSTALL.md")
-    from("docs/releases/$releaseVersion.md") { rename { "RELEASE_NOTES.md" } }
+    from(releaseNotes) { rename { "RELEASE_NOTES.md" } }
 }
 val releaseChecksums by tasks.registering {
     group = "distribution"

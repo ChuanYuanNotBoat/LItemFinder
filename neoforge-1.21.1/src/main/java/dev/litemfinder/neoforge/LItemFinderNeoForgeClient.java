@@ -15,7 +15,7 @@ import dev.litemfinder.neoforge.client.DefaultItemFinderClientApi;
 import dev.litemfinder.neoforge.client.ItemFinderClientApi;
 import dev.litemfinder.neoforge.client.gui.ClientDisplayConfig;
 import dev.litemfinder.neoforge.client.gui.InventoryOverviewScreen;
-import dev.litemfinder.neoforge.client.view.AcquisitionDraft;
+import dev.litemfinder.core.view.AcquisitionDraft;
 import dev.litemfinder.neoforge.command.ClientDebugCommands;
 import dev.litemfinder.neoforge.diagnostics.CaptureDiagnostics;
 import dev.litemfinder.neoforge.identity.MinecraftContainerIdentityResolver;
@@ -70,6 +70,7 @@ public final class LItemFinderNeoForgeClient {
     private final CaptureDiagnostics diagnostics = new CaptureDiagnostics();
     private final ItemFinderClientApi clientApi;
     private final AcquisitionDraft acquisitionDraft = new AcquisitionDraft();
+    private final dev.litemfinder.neoforge.compat.InventoryPluginLoader plugins = new dev.litemfinder.neoforge.compat.InventoryPluginLoader();
     private final ClientDebugCommands commands;
     private final RecentInteractionTracker interactions;
     private final ClientMenuCaptureCoordinator captures;
@@ -84,7 +85,7 @@ public final class LItemFinderNeoForgeClient {
         container.registerConfig(ModConfig.Type.CLIENT, ClientDisplayConfig.SPEC);
         storage = new SnapshotStorageCoordinator(FMLPaths.CONFIGDIR.get().resolve("litemfinder/index"));
         clientApi = new DefaultItemFinderClientApi(storage, itemTags, diagnostics);
-        commands = new ClientDebugCommands(clientApi, this::requestOverview);
+        commands = new ClientDebugCommands(clientApi, this::requestOverview, plugins::report);
         interactions = new RecentInteractionTracker(new MinecraftContainerIdentityResolver());
         captures = new ClientMenuCaptureCoordinator(
                 new MinecraftScopeResolver(),
@@ -109,6 +110,7 @@ public final class LItemFinderNeoForgeClient {
         aimedFluids = new dev.litemfinder.neoforge.capture.ClientFluidInventoryCaptureCoordinator(snapshot ->
                 storage.submitPartial(snapshot, java.util.Set.of(), false));
         modEventBus.addListener(this::registerReloadListeners);
+        modEventBus.addListener(this::registerInventoryPlugins);
         modEventBus.addListener(this::registerKeyMappings);
         NeoForge.EVENT_BUS.addListener(this::onClientLogout);
         NeoForge.EVENT_BUS.addListener(this::onClientTick);
@@ -124,8 +126,12 @@ public final class LItemFinderNeoForgeClient {
         if (Boolean.getBoolean("litemfinder.m0.sqliteProbe")) {
             Path database = Path.of("litemfinder-m0-sqlite-probe.db");
             SqliteRuntimeProbe.verify(database);
-            LOGGER.info("LItem Finder SQLite runtime probe passed");
+            LOGGER.info("LItem Finder SQLite runtime probe passed (write, close, reopen, read, cleanup)");
         }
+    }
+
+    private void registerInventoryPlugins(net.neoforged.fml.event.lifecycle.FMLClientSetupEvent event) {
+        event.enqueueWork(plugins::loadNeoForge);
     }
 
     private void registerReloadListeners(RegisterClientReloadListenersEvent event) {
@@ -246,6 +252,7 @@ public final class LItemFinderNeoForgeClient {
         blockInventoryCaptures.reset();
         aimedFluids.reset();
         storage.close();
+        plugins.close();
     }
 
     private void storeBlockCapture(BlockCaptureRequest request) {

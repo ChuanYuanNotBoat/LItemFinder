@@ -9,6 +9,12 @@ import dev.litemfinder.core.model.ContainerId;
 import dev.litemfinder.core.model.FluidKey;
 import dev.litemfinder.core.view.FluidOverview;
 import dev.litemfinder.core.view.FluidQuantityFormat;
+import dev.litemfinder.core.view.MapRoute;
+import dev.litemfinder.core.view.RouteTransition;
+import dev.litemfinder.core.view.NavigationSummary;
+import dev.litemfinder.neoforge.client.navigation.NavigationSummaries;
+import dev.litemfinder.neoforge.client.gui.map.RoutePresentation;
+import net.minecraft.Util;
 import dev.litemfinder.core.model.ItemKey;
 import dev.litemfinder.core.model.NamespacedId;
 import dev.litemfinder.core.model.WorldLocation;
@@ -16,13 +22,13 @@ import dev.litemfinder.core.model.WorldPosition;
 import dev.litemfinder.core.search.SearchQuery;
 import dev.litemfinder.neoforge.client.ItemFinderClientApi;
 import dev.litemfinder.neoforge.client.gui.map.ContainerMap3DCamera;
-import dev.litemfinder.neoforge.client.gui.map.ContainerRouteOptimizer;
+import dev.litemfinder.core.view.ContainerRouteOptimizer;
 import dev.litemfinder.neoforge.client.gui.map.ContainerVisualResolver;
 import dev.litemfinder.neoforge.client.gui.map.ContainerSceneRenderer;
 import dev.litemfinder.neoforge.client.gui.map.MapLineClipper;
 import dev.litemfinder.neoforge.client.navigation.NavigationGateway;
-import dev.litemfinder.neoforge.client.view.AcquisitionDraft;
-import dev.litemfinder.neoforge.client.view.AcquisitionPlan;
+import dev.litemfinder.core.view.AcquisitionDraft;
+import dev.litemfinder.core.view.AcquisitionPlan;
 import dev.litemfinder.core.view.ContainerOverview;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -33,6 +39,8 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.locale.Language;
 import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapDecorationTypes;
 import org.slf4j.Logger;
@@ -90,6 +98,10 @@ public final class ContainerMapScreen extends Screen {
     private final Map<ContainerId, ContainerVisualResolver.ContainerBlockVisual> localVisuals = new HashMap<>();
     private AcquisitionPlan routePlan = new AcquisitionPlan(List.of(), Map.of());
     private NavigationGateway.Overlay navigationOverlay;
+    private final RoutePresentation routePresentation = new RoutePresentation();
+    private RouteTransition.Frame routeFrame = routePresentation.frame(0);
+    private float routePartialTick;
+    private net.minecraft.client.multiplayer.ClientLevel presentedLevel;
     private List<NamespacedId> dimensions = List.of();
     private NamespacedId dimension;
     private ContainerId selected;
@@ -103,6 +115,9 @@ public final class ContainerMapScreen extends Screen {
     private Button lowerButton;
     private Button upperButton;
     private Button contentsButton;
+    private Button playerContentsButton;
+    private double playerMarkerX = Double.NaN, playerMarkerY = Double.NaN;
+    private final ContainerItemTooltip playerTooltip = new ContainerItemTooltip();
     private Button groupButton;
     private List<ContainerOverview.GroupRow> storageGroups = List.of();
     private String storageGroup;
@@ -124,7 +139,19 @@ public final class ContainerMapScreen extends Screen {
     private int ticks;
     private long navigationRequestId;
     private boolean providerFailureLogged;
+    private long providerRevision = Long.MIN_VALUE;
     private boolean navigationPending;
+    private boolean navigationFailed;
+    private Button routeDetailsButton, routeRetryButton;
+    private NavigationSummary summarySnapshot;
+    private NavigationGateway.Overlay summaryOverlay;
+    private List<WorldLocation> summaryStops = List.of();
+    private ContainerOverview summaryOverview;
+    private boolean summaryPending, summaryFailed;
+    private Component summaryDestination = Component.empty();
+    private List<FormattedCharSequence> summaryLines = List.of();
+    private Language summaryLanguage;
+    private int summaryWidth = -1, summaryScroll, footerHeight = FOOTER;
     private int lastNavigationTick = -200;
     private WorldPosition routeOrigin;
     private List<WorldLocation> orderedRouteStops = List.of();
@@ -164,9 +191,12 @@ public final class ContainerMapScreen extends Screen {
         fluidsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.fluids"), ignored -> switchContent(true))
                 .bounds(160, 3, 46, 20).build());
         itemsTab.active = fluidView; fluidsTab.active = !fluidView;
-        searchBox = addRenderableWidget(new EditBox(font, 12, 25, Math.max(70, width - 437), 18,
+        int dimensionWidth = Math.min(124, Math.max(64, width / 4));
+        int searchWidth = Math.max(40, width - dimensionWidth - 144);
+        searchBox = addRenderableWidget(new EditBox(font, 12, 25, searchWidth, 18,
                 Component.translatable("gui.litemfinder.map.search")));
-        searchBox.setHint(Component.translatable(fluidView ? "gui.litemfinder.fluids.search" : "gui.litemfinder.map.search"));
+        searchBox.setHint(Component.literal(font.plainSubstrByWidth(Component.translatable(fluidView
+                ? "gui.litemfinder.fluids.search" : "gui.litemfinder.map.search").getString(), Math.max(1, searchWidth - 8))));
         searchBox.setMaxLength(120);
         searchBox.setValue(searchText);
         searchBox.setResponder(value -> {
@@ -175,20 +205,31 @@ public final class ContainerMapScreen extends Screen {
             refreshNavigation();
         });
         dimensionButton = addRenderableWidget(Button.builder(Component.empty(), ignored -> cycleDimension())
-                .bounds(Math.max(90, width - 352), 24, 124, 20).build());
+                .bounds(20 + searchWidth, 24, dimensionWidth, 20).build());
         modeButton = addRenderableWidget(Button.builder(Component.empty(), ignored -> toggleMode())
-                .bounds(width - 220, 24, 58, 20).build());
+                .bounds(width - 116, 24, 44, 20).build());
         lowerButton = addRenderableWidget(Button.builder(Component.literal("Y−"), ignored -> layerY--)
-                .bounds(width - 154, 24, 41, 20).build());
+                .bounds(width - 100, 3, 41, 20).build());
         upperButton = addRenderableWidget(Button.builder(Component.literal("Y+"), ignored -> layerY++)
-                .bounds(width - 109, 24, 41, 20).build());
+                .bounds(width - 55, 3, 41, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.back"), ignored -> onClose())
                 .bounds(width - 64, 24, 52, 20).build());
         contentsButton = addRenderableWidget(Button.builder(
                         Component.translatable("gui.litemfinder.map.contents"), ignored -> openSelectedContents())
                 .bounds(mapRight() + 6, HEADER + 112, PANEL_WIDTH - 18, 20).build());
+        playerContentsButton = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.player.open"),
+                ignored -> openPlayerContents()).bounds(mapRight() + 6, HEADER + 24, PANEL_WIDTH - 18, 20).build());
         groupButton = addRenderableWidget(Button.builder(Component.empty(), ignored -> cycleStorageGroup())
                 .bounds(mapRight() + 6, HEADER + 138, PANEL_WIDTH - 18, 20).build());
+        routeDetailsButton = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.navigation.details"),
+                ignored -> minecraft.setScreen(new NavigationReportScreen(this, summarySnapshot, summaryDestination)))
+                .bounds(12, height - 24, 140, 20).build());
+        routeRetryButton = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.navigation.retry"), ignored -> {
+            invalidateNavigation();
+            refreshNavigation();
+        }).bounds(160, height - 24, 140, 20).build());
+        routeDetailsButton.visible = false;
+        routeRetryButton.visible = false;
         refresh();
         updateButtons();
     }
@@ -196,6 +237,20 @@ public final class ContainerMapScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        if (navigation.isPresent()) {
+            try {
+                long revision = navigation.orElseThrow().revision();
+                if (providerRevision != Long.MIN_VALUE && providerRevision != revision) {
+                    invalidateNavigation();
+                    refreshNavigation();
+                }
+                providerRevision = revision;
+            } catch (RuntimeException | LinkageError failedProvider) {
+                invalidateNavigation();
+                navigationFailed = true;
+                logProviderFailure(failedProvider);
+            }
+        }
         if (++ticks % 40 == 0) {
             refresh();
         }
@@ -203,6 +258,15 @@ public final class ContainerMapScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        routePartialTick = partialTick;
+        if (minecraft != null && presentedLevel != minecraft.level) {
+            if (presentedLevel != null) invalidateNavigation();
+            presentedLevel = minecraft.level;
+        }
+        long now = Util.getMillis();
+        updateRoutePresentation(now);
+        routeFrame = routePresentation.frame(now);
+        prepareNavigationSummary();
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0xF0101720);
         graphics.fill(0, 0, width, HEADER, 0xFF1C2834);
@@ -210,8 +274,10 @@ public final class ContainerMapScreen extends Screen {
         int right = mapRight();
         graphics.fill(8, HEADER, right, mapBottom(), 0xFF17232C);
         graphics.enableScissor(8, HEADER, right, mapBottom());
+        playerMarkerX = playerMarkerY = Double.NaN;
         if (localView) {
             renderLocal(graphics);
+            renderPlayerPointer(graphics);
         } else {
             renderGrid(graphics);
             renderRoute(graphics);
@@ -220,17 +286,32 @@ public final class ContainerMapScreen extends Screen {
             renderMapCoordinates(graphics, mouseX, mouseY);
         }
         graphics.disableScissor();
+        graphics.enableScissor(mapRight(), HEADER, width, mapBottom());
         renderPanel(graphics);
+        graphics.disableScissor();
         graphics.fill(0, mapBottom(), width, height, 0xFF1C2834);
-        boolean actualRoute = navigationOverlay != null && !navigationOverlay.segments().isEmpty();
-        String footer = Component.translatable(localView ? "gui.litemfinder.map.local_hint"
-                : actualRoute && navigationOverlay.status() == NavigationGateway.Status.PARTIAL
-                ? "gui.litemfinder.map.partial_hint"
-                : actualRoute ? "gui.litemfinder.map.actual_hint" : "gui.litemfinder.map.overview_hint")
-                .getString();
-        graphics.drawString(font, font.plainSubstrByWidth(footer, width - 24), 12,
-                height - 18, 0xFFB8C6D2);
+        if (!orderedRouteStops.isEmpty()) {
+            renderNavigationSummary(graphics);
+        } else {
+            boolean actualRoute = navigationOverlay != null && !navigationOverlay.segments().isEmpty();
+            boolean transitioning = !routeFrame.route().isEmpty() && routeFrame.opacity() < 1;
+            String footer = Component.translatable(localView ? "gui.litemfinder.map.local_hint"
+                    : navigationPending && actualRoute ? "gui.litemfinder.map.updating_hint"
+                    : transitioning ? "gui.litemfinder.map.transition_hint"
+                    : actualRoute && navigationOverlay.status() == NavigationGateway.Status.PARTIAL
+                    ? "gui.litemfinder.map.partial_hint"
+                    : actualRoute ? "gui.litemfinder.map.actual_hint" : "gui.litemfinder.map.overview_hint")
+                    .getString();
+            graphics.drawString(font, font.plainSubstrByWidth(footer, width - 24), 12,
+                    height - 18, 0xFFB8C6D2);
+        }
         super.render(graphics, mouseX, mouseY, partialTick);
+        if (isPlayerHit(mouseX, mouseY)) {
+            var row = playerRow();
+            playerTooltip.render(graphics, font, width, height, mouseX, mouseY,
+                    Component.translatable("gui.litemfinder.player.belongings"), "", 1, true,
+                    row.map(dev.litemfinder.core.view.ContainerPreview::snapshot).orElse(null));
+        }
     }
 
     @Override
@@ -377,39 +458,58 @@ public final class ContainerMapScreen extends Screen {
         return new Hit(left - 3, top - 3, right + 4, bottom + 4, List.of(row));
     }
 
-    private void renderRoute(GuiGraphics graphics) {
-        if (navigationOverlay != null && !navigationOverlay.segments().isEmpty()) {
-            renderNavigationOverlay(graphics);
-            return;
-        }
-        if (orderedRouteStops.isEmpty()) {
-            return;
-        }
-        WorldPosition from = liveRouteOrigin();
-        int firstStop = 0;
-        if (from == null) {
-            from = WorldPosition.at(orderedRouteStops.getFirst());
-            firstStop = 1;
-        }
-        for (int index = firstStop; index < orderedRouteStops.size(); index++) {
-            WorldLocation to = orderedRouteStops.get(index);
-            if (from.scope().equals(to.scope()) && from.dimension().equals(to.dimension())
-                    && to.dimension().equals(dimension)) {
-                drawDottedLine(graphics, screenX(from.x()), screenZ(from.z()),
-                        screenX(to.x()), screenZ(to.z()), 0xFFEDC877, 7);
-            }
-            from = WorldPosition.at(to);
+    private void updateRoutePresentation(long now) {
+        try {
+            routePresentation.update(playerOrigin(orderedRouteStops), orderedRouteStops, navigationOverlay, now);
+        } catch (RuntimeException invalidRoute) {
+            navigationOverlay = null;
+            logProviderFailure(invalidRoute);
+            routePresentation.update(playerOrigin(orderedRouteStops), orderedRouteStops, null, now);
         }
     }
 
-    private WorldPosition liveRouteOrigin() {
-        if (routeOrigin == null || minecraft == null || minecraft.player == null || minecraft.level == null) {
-            return routeOrigin;
+    private void renderRoute(GuiGraphics graphics) {
+        if (routeFrame.opacity() <= 0) return;
+        var route = routeFrame.route();
+        for (int segmentIndex = 0; segmentIndex < route.segments().size(); segmentIndex++) {
+            var segment = route.segments().get(segmentIndex);
+            int color = presentedRouteColor(segment.mode());
+            for (int index = 1; index < segment.points().size(); index++) {
+                WorldPosition from = routePoint(segmentIndex, index - 1);
+                WorldPosition to = routePoint(segmentIndex, index);
+                if (!MapRoute.sameSpace(from, to)) {
+                    if (route.kind() == MapRoute.Kind.NAVIGATION && from.dimension().equals(dimension)) {
+                        int x = (int) screenX(from.x());
+                        int y = (int) screenZ(from.z());
+                        graphics.fill(x - 5, y - 5, x + 6, y + 6, color);
+                    }
+                    continue;
+                }
+                if (to.dimension().equals(dimension)) {
+                    drawDottedLine(graphics, screenX(from.x()), screenZ(from.z()),
+                            screenX(to.x()), screenZ(to.z()), color, route.kind() == MapRoute.Kind.SCHEMATIC ? 7 : 2);
+                }
+            }
         }
-        var position = minecraft.player.position();
-        return new WorldPosition(routeOrigin.scope(),
-                NamespacedId.parse(minecraft.level.dimension().location().toString()),
-                position.x, position.y, position.z);
+    }
+
+    private WorldPosition routePoint(int segment, int index) {
+        WorldPosition point = routeFrame.point(segment, index);
+        if (segment == 0 && index == 0 && routeFrame.route().followsPlayer()
+                && minecraft != null && minecraft.player != null && minecraft.level != null) {
+            var position = minecraft.player.getPosition(routePartialTick);
+            WorldPosition live = new WorldPosition(point.scope(),
+                    NamespacedId.parse(minecraft.level.dimension().location().toString()),
+                    position.x, position.y, position.z);
+            // Vanilla render interpolation follows ordinary motion. Teleports keep the outgoing path in place.
+            if (MapRoute.near(point, live, 8)) return live;
+        }
+        return point;
+    }
+
+    private int presentedRouteColor(String mode) {
+        int color = routeFrame.route().kind() == MapRoute.Kind.SCHEMATIC ? 0xFFEDC877 : routeColor(mode);
+        return ((int) Math.round(255 * routeFrame.opacity()) << 24) | (color & 0xFFFFFF);
     }
 
     private void renderPlayerPointer(GuiGraphics graphics) {
@@ -417,38 +517,21 @@ public final class ContainerMapScreen extends Screen {
                 || !NamespacedId.parse(minecraft.level.dimension().location().toString()).equals(dimension)) {
             return;
         }
+        double markerX = screenX(minecraft.player.getX()), markerY = screenZ(minecraft.player.getZ());
+        if (localView) {
+            if (localAnchor == null) return;
+            var point = projectLocal(minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ(), localAnchor);
+            markerX = point.x(); markerY = point.y();
+        }
+        if (markerX < 8 || markerX >= mapRight() || markerY < HEADER || markerY >= mapBottom()) return;
+        playerMarkerX = markerX; playerMarkerY = markerY;
         TextureAtlasSprite sprite = minecraft.getMapDecorationTextures().get(PLAYER_MAP_DECORATION);
         PoseStack pose = graphics.pose();
         pose.pushPose();
-        pose.translate(screenX(minecraft.player.getX()), screenZ(minecraft.player.getZ()), 200);
+        pose.translate(markerX, markerY, 200);
         pose.mulPose(Axis.ZP.rotationDegrees(minecraft.player.getYRot()));
         graphics.blit(-6, -6, 0, 12, 12, sprite, 0.45F, 0.84F, 1.0F, 1.0F);
         pose.popPose();
-    }
-
-    private void renderNavigationOverlay(GuiGraphics graphics) {
-        for (NavigationGateway.Segment segment : navigationOverlay.segments()) {
-            int color = routeColor(segment.mode());
-            for (int index = 1; index < segment.points().size(); index++) {
-                WorldPosition from = segment.points().get(index - 1);
-                WorldPosition to = segment.points().get(index);
-                if (lastNavigationOrigin == null
-                        || !from.scope().equals(lastNavigationOrigin.scope())
-                        || !to.scope().equals(lastNavigationOrigin.scope())) {
-                    continue;
-                }
-                if (!from.dimension().equals(dimension) || !to.dimension().equals(dimension)) {
-                    if (from.dimension().equals(dimension)) {
-                        int x = (int) screenX(from.x());
-                        int y = (int) screenZ(from.z());
-                        graphics.fill(x - 5, y - 5, x + 6, y + 6, color);
-                    }
-                    continue;
-                }
-                drawDottedLine(graphics, screenX(from.x()), screenZ(from.z()),
-                        screenX(to.x()), screenZ(to.z()), color, 2);
-            }
-        }
     }
 
     private void renderLocal(GuiGraphics graphics) {
@@ -483,7 +566,7 @@ public final class ContainerMapScreen extends Screen {
         }
         renderLocalScene(graphics, anchor, visibleRows, plannedRoots);
         hits = List.copyOf(markers);
-        renderLocalNavigationOverlay(graphics, anchor);
+        renderLocalRoute(graphics, anchor);
         graphics.drawString(font, Component.translatable("gui.litemfinder.map.y_layer", layerY),
                 15, HEADER + 10, 0xFFFFD36B);
     }
@@ -594,25 +677,22 @@ public final class ContainerMapScreen extends Screen {
                 mapCenterX(), mapCenterY());
     }
 
-    private void renderLocalNavigationOverlay(GuiGraphics graphics, WorldLocation anchor) {
-        if (navigationOverlay == null || lastNavigationOrigin == null) {
-            return;
-        }
-        for (NavigationGateway.Segment segment : navigationOverlay.segments()) {
+    private void renderLocalRoute(GuiGraphics graphics, WorldLocation anchor) {
+        if (routeFrame.opacity() <= 0) return;
+        var route = routeFrame.route();
+        for (int segmentIndex = 0; segmentIndex < route.segments().size(); segmentIndex++) {
+            var segment = route.segments().get(segmentIndex);
             for (int index = 1; index < segment.points().size(); index++) {
-                WorldPosition from = segment.points().get(index - 1);
-                WorldPosition to = segment.points().get(index);
+                WorldPosition from = routePoint(segmentIndex, index - 1);
+                WorldPosition to = routePoint(segmentIndex, index);
                 if (!from.scope().equals(anchor.scope()) || !to.scope().equals(anchor.scope())
                         || !from.dimension().equals(anchor.dimension())
                         || !to.dimension().equals(anchor.dimension())
-                        || !withinLocalView(from, anchor) || !withinLocalView(to, anchor)) {
-                    continue;
-                }
+                        || !withinLocalView(from, anchor) || !withinLocalView(to, anchor)) continue;
                 ContainerMap3DCamera.ProjectedPoint fromPoint = projectLocal(from.x(), from.y(), from.z(), anchor);
                 ContainerMap3DCamera.ProjectedPoint toPoint = projectLocal(to.x(), to.y(), to.z(), anchor);
-                drawDottedLine(graphics,
-                        fromPoint.x(), fromPoint.y(), toPoint.x(), toPoint.y(),
-                        routeColor(segment.mode()), 2);
+                drawDottedLine(graphics, fromPoint.x(), fromPoint.y(), toPoint.x(), toPoint.y(),
+                        presentedRouteColor(segment.mode()), route.kind() == MapRoute.Kind.SCHEMATIC ? 7 : 2);
             }
         }
     }
@@ -640,7 +720,15 @@ public final class ContainerMapScreen extends Screen {
         graphics.drawString(font, Component.translatable("gui.litemfinder.map.details"),
                 left, y, 0xFFF2F4F6);
         y += 19;
+        playerContentsButton.visible = minecraft != null && minecraft.player != null && y + 22 < mapBottom();
+        if (playerContentsButton.visible) {
+            playerContentsButton.setX(left); playerContentsButton.setY(y);
+            y += 26;
+        }
         if (row != null) {
+            if ("true".equals(row.container().metadata().get("recoveryIncomplete"))) {
+                y = panelLine(graphics, Component.translatable("gui.litemfinder.contents.recovered").getString(), left, y, 0xFFFFD36B);
+            }
             y = panelLine(graphics, row.container().type().id().toString(), left, y, 0xFFD8E7F2);
             if (row.container().location() instanceof WorldLocation world) {
                 y = panelLine(graphics, world.dimension().toString(), left, y, 0xFFB8C6D2);
@@ -650,8 +738,9 @@ public final class ContainerMapScreen extends Screen {
                 y = panelLine(graphics, Component.translatable("gui.litemfinder.plan.logical").getString(),
                         left, y, 0xFFB8C6D2);
             }
-            y = panelLine(graphics, Component.translatable("gui.litemfinder.map.slots",
-                    row.occupiedSlots(), row.slots()).getString(), left, y, 0xFFB8C6D2);
+            y = panelLine(graphics, ("true".equals(row.container().metadata().get("recoveryCapacityUnknown"))
+                    ? Component.translatable("gui.litemfinder.contents.unknown_capacity", row.occupiedSlots())
+                    : Component.translatable("gui.litemfinder.map.slots", row.occupiedSlots(), row.slots())).getString(), left, y, 0xFFB8C6D2);
             y = panelLine(graphics, SnapshotTimeFormatter.format(row.observedAt()), left, y, 0xFFB8C6D2);
             var fluids = visibleFluids(row.container().id());
             for (int index = 0; index < Math.min(3, fluids.size()) && y + 90 < mapBottom(); index++) {
@@ -664,7 +753,7 @@ public final class ContainerMapScreen extends Screen {
                 graphics.drawString(font, amount, width - 12 - font.width(amount), y + 4, 0xFFB9E3B7);
                 y += 20;
             }
-            contentsButton.visible = true;
+            contentsButton.visible = y + 21 < mapBottom();
             contentsButton.setX(left);
             contentsButton.setY(y + 1);
             y += 25;
@@ -674,7 +763,7 @@ public final class ContainerMapScreen extends Screen {
             contentsButton.visible = false;
         }
         int logicalY = Math.max(y + 10, HEADER + 121);
-        groupButton.visible = !storageGroups.isEmpty();
+        groupButton.visible = !storageGroups.isEmpty() && logicalY + 22 < mapBottom();
         if (groupButton.visible) {
             groupButton.setX(left);
             groupButton.setY(logicalY);
@@ -736,6 +825,7 @@ public final class ContainerMapScreen extends Screen {
         if (button != 0) {
             return false;
         }
+        if (isPlayerHit(mouseX, mouseY)) { openPlayerContents(); return true; }
         List<Hit> clicked = hits.stream().filter(hit -> hit.contains(mouseX, mouseY)).toList();
         if (!clicked.isEmpty()) {
             int current = -1;
@@ -791,6 +881,7 @@ public final class ContainerMapScreen extends Screen {
     }
 
     private void selectLocalHit(double mouseX, double mouseY) {
+        if (isPlayerHit(mouseX, mouseY)) { openPlayerContents(); return; }
         Hit best = hits.stream()
                 .filter(hit -> hit.contains(mouseX, mouseY))
                 .min(Comparator.comparingDouble(hit -> hit.distanceSquared(mouseX, mouseY)))
@@ -802,6 +893,10 @@ public final class ContainerMapScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
+        if (!orderedRouteStops.isEmpty() && mouseY >= mapBottom() && mouseY < height - 27 && deltaY != 0) {
+            summaryScroll = Math.max(0, Math.min(summaryMaxScroll(), summaryScroll - (int) Math.signum(deltaY) * 22));
+            return true;
+        }
         if (mouseX < mapRight() && mouseY >= HEADER && mouseY < mapBottom() && deltaY != 0) {
             if (localView) {
                 localCamera.zoom(deltaY);
@@ -819,13 +914,30 @@ public final class ContainerMapScreen extends Screen {
 
     @Override
     public void onClose() {
-        navigationRequestId++;
+        invalidateNavigation();
         localVisuals.clear();
         visualResolver.clear();
         sceneRenderer.clear();
         if (minecraft != null) {
             minecraft.setScreen(parent);
         }
+    }
+
+    @Override
+    public void removed() {
+        invalidateNavigation();
+        super.removed();
+    }
+
+    private void invalidateNavigation() {
+        navigationRequestId++;
+        navigationPending = false;
+        navigationFailed = false;
+        navigationOverlay = null;
+        lastNavigationOrigin = null;
+        lastNavigationStops = List.of();
+        lastNavigationTick = -200;
+        routePresentation.clear();
     }
 
     private void refresh() {
@@ -856,11 +968,13 @@ public final class ContainerMapScreen extends Screen {
                     && row.container().location() instanceof WorldLocation).map(row -> row.container().id()).findFirst().orElse(null);
         }
         refreshNavigation();
-        dimensions = rootsByDimension.keySet().stream().sorted().toList();
+        var availableDimensions = new java.util.TreeSet<>(rootsByDimension.keySet());
+        if (minecraft != null && minecraft.level != null) availableDimensions.add(NamespacedId.parse(minecraft.level.dimension().location().toString()));
+        dimensions = List.copyOf(availableDimensions);
         if (dimension == null || !dimensions.contains(dimension)) {
             NamespacedId playerDimension = minecraft != null && minecraft.level != null
                     ? NamespacedId.parse(minecraft.level.dimension().location().toString()) : null;
-            dimension = dimensions.contains(playerDimension) ? playerDimension
+            dimension = playerDimension != null && dimensions.contains(playerDimension) ? playerDimension
                     : dimensions.isEmpty() ? null : dimensions.getFirst();
             initializedView = false;
         }
@@ -927,36 +1041,61 @@ public final class ContainerMapScreen extends Screen {
             if ((!changed && navigationPending) || (!changed && ticks - lastNavigationTick < 200)) {
                 return;
             }
+            boolean samePlan = stops.equals(lastNavigationStops) && lastNavigationOrigin != null
+                    && MapRoute.sameSpace(origin, lastNavigationOrigin);
+            if (!samePlan) navigationOverlay = null;
             lastNavigationStops = stops;
             lastNavigationOrigin = origin;
             lastNavigationTick = ticks;
             navigationPending = true;
-            navigationOverlay = null;
+            navigationFailed = false;
             long requestId = ++navigationRequestId;
+            var requestLevel = minecraft.level;
             try {
                 navigation.orElseThrow().route(origin, stops).whenComplete((overlay, failure) ->
                         minecraft.execute(() -> {
                             if (requestId != navigationRequestId) {
                                 return;
                             }
+                            if (minecraft.screen != this || minecraft.level != requestLevel) {
+                                invalidateNavigation();
+                                return;
+                            }
                             navigationPending = false;
                             if (failure != null) {
+                                navigationOverlay = null;
+                                navigationFailed = true;
                                 logProviderFailure(failure);
                                 return;
                             }
-                            if (overlay != null && (overlay.status() == NavigationGateway.Status.FOUND
-                                    || overlay.status() == NavigationGateway.Status.PARTIAL)) {
-                                navigationOverlay = overlay;
-                            }
+                            navigationOverlay = null;
+                            if (overlay != null) {
+                                try {
+                                    NavigationSummaries.from(stops, overlay, true, false, false);
+                                    if (!overlay.segments().isEmpty()) {
+                                        RoutePresentation.navigation(origin, overlay);
+                                    } else if (overlay.status() == NavigationGateway.Status.FOUND
+                                            && overlay.report().verifiedStops() != stops.size()) {
+                                        throw new IllegalArgumentException("an empty complete route needs explicit stop coverage");
+                                    }
+                                    navigationOverlay = overlay;
+                                } catch (RuntimeException invalidRoute) {
+                                    navigationFailed = true;
+                                    logProviderFailure(invalidRoute);
+                                }
+                            } else navigationFailed = true;
                         }));
-            } catch (RuntimeException failedProvider) {
+            } catch (RuntimeException | LinkageError failedProvider) {
                 navigationPending = false;
+                navigationOverlay = null;
+                navigationFailed = true;
                 logProviderFailure(failedProvider);
             }
             return;
         }
         navigationRequestId++;
         navigationPending = false;
+        navigationFailed = false;
         navigationOverlay = null;
         lastNavigationStops = List.of();
         lastNavigationOrigin = null;
@@ -986,7 +1125,7 @@ public final class ContainerMapScreen extends Screen {
         var player = minecraft.player.position();
         return new WorldPosition(stops.getFirst().scope(),
                 NamespacedId.parse(minecraft.level.dimension().location().toString()),
-                Math.floor(player.x), Math.floor(player.y), Math.floor(player.z));
+                player.x, player.y, player.z);
     }
 
     private void refreshHighlights() {
@@ -1026,8 +1165,8 @@ public final class ContainerMapScreen extends Screen {
             if (!targets.isEmpty()) rows = targets;
         }
         if (rows.isEmpty()) {
-            centerX = 0;
-            centerZ = 0;
+            centerX = minecraft != null && minecraft.player != null ? minecraft.player.getX() : 0;
+            centerZ = minecraft != null && minecraft.player != null ? minecraft.player.getZ() : 0;
             zoom = 1;
             return;
         }
@@ -1149,12 +1288,100 @@ public final class ContainerMapScreen extends Screen {
         return selected == null ? null : rootsById.get(selected);
     }
 
+    private Optional<ContainerOverview.RootRow> playerRow() {
+        return minecraft == null || minecraft.player == null ? Optional.empty()
+                : dev.litemfinder.core.view.ContainerPreview.player(overview, minecraft.player.getUUID());
+    }
+    private boolean isPlayerHit(double x, double y) {
+        return x >= 8 && x < mapRight() && y >= HEADER && y < mapBottom()
+                && Math.abs(x - playerMarkerX) <= 8 && Math.abs(y - playerMarkerY) <= 8;
+    }
+    private void openPlayerContents() {
+        if (minecraft == null || minecraft.player == null) return;
+        var id = playerRow().map(row -> row.container().id());
+        if (id.isEmpty()) id = new dev.litemfinder.neoforge.identity.MinecraftScopeResolver().resolve(minecraft)
+                .map(scope -> dev.litemfinder.neoforge.identity.ContainerIdentityFactory.playerInventory(scope, minecraft.player.getUUID()).container().id());
+        id.ifPresent(root -> minecraft.setScreen(new ContainerContentsScreen(this, api, root)));
+    }
+
     private int mapRight() {
         return Math.max(110, width - PANEL_WIDTH - 8);
     }
 
     private int mapBottom() {
-        return Math.max(HEADER + 1, height - FOOTER);
+        return Math.max(HEADER + 1, height - footerHeight);
+    }
+
+    private void prepareNavigationSummary() {
+        boolean changed = summarySnapshot == null || summaryOverlay != navigationOverlay
+                || !summaryStops.equals(orderedRouteStops) || summaryPending != navigationPending
+                || summaryFailed != navigationFailed || summaryOverview != overview;
+        if (changed) {
+            summarySnapshot = NavigationSummaries.from(orderedRouteStops, navigationOverlay,
+                    navigation.isPresent(), navigationPending, navigationFailed);
+            summaryOverlay = navigationOverlay;
+            summaryStops = orderedRouteStops;
+            summaryPending = navigationPending;
+            summaryFailed = navigationFailed;
+            summaryOverview = overview;
+            summaryDestination = destinationLabel();
+        }
+        if (changed || summaryWidth != width || summaryLanguage != Language.getInstance()) {
+            List<FormattedCharSequence> wrapped = new ArrayList<>();
+            for (Component paragraph : NavigationSummaryText.summary(summarySnapshot, summaryDestination)) {
+                wrapped.addAll(font.split(paragraph, Math.max(1, width - 28)));
+            }
+            summaryLines = List.copyOf(wrapped);
+            summaryWidth = width;
+            summaryLanguage = Language.getInstance();
+            summaryScroll = 0;
+        }
+        footerHeight = orderedRouteStops.isEmpty() ? FOOTER
+                : Math.min(Math.max(FOOTER, height - HEADER - 40), summaryLines.size() * (font.lineHeight + 2) + 36);
+        routeDetailsButton.visible = !orderedRouteStops.isEmpty();
+        routeRetryButton.visible = !orderedRouteStops.isEmpty();
+        routeRetryButton.active = navigation.isPresent() && !navigationPending;
+        int buttonWidth = Math.max(1, Math.min(160, (width - 36) / 2));
+        routeDetailsButton.setX(12); routeDetailsButton.setY(height - 24); routeDetailsButton.setWidth(buttonWidth);
+        routeRetryButton.setX(24 + buttonWidth); routeRetryButton.setY(height - 24); routeRetryButton.setWidth(buttonWidth);
+        summaryScroll = Math.min(summaryScroll, summaryMaxScroll());
+    }
+
+    private Component destinationLabel() {
+        if (!orderedRouteStops.isEmpty()) {
+            var target = orderedRouteStops.getFirst();
+            var row = overview.roots().stream().filter(root -> root.container().location().equals(target)).findFirst();
+            if (row.isPresent()) {
+                String block = row.orElseThrow().container().metadata().get("minecraftBlock");
+                if (block != null) {
+                    var id = net.minecraft.resources.ResourceLocation.tryParse(block);
+                    if (id != null && net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(id)) {
+                        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(id).getName();
+                    }
+                }
+            }
+        }
+        return Component.translatable("gui.litemfinder.navigation.container");
+    }
+
+    private void renderNavigationSummary(GuiGraphics graphics) {
+        int top = mapBottom() + 6;
+        graphics.enableScissor(8, top, width - 8, height - 28);
+        for (int index = 0; index < summaryLines.size(); index++) {
+            int y = top + index * (font.lineHeight + 2) - summaryScroll;
+            if (y + font.lineHeight >= top && y < height - 28) graphics.drawString(font, summaryLines.get(index), 12, y, 0xFFD7E3EC);
+        }
+        graphics.disableScissor();
+        if (summaryMaxScroll() > 0) {
+            int area = Math.max(1, height - 28 - top);
+            int thumb = Math.max(8, area * area / Math.max(area, summaryLines.size() * (font.lineHeight + 2)));
+            int y = top + (area - thumb) * summaryScroll / summaryMaxScroll();
+            graphics.fill(width - 6, y, width - 3, y + thumb, 0xFF8CAFC4);
+        }
+    }
+
+    private int summaryMaxScroll() {
+        return Math.max(0, summaryLines.size() * (font.lineHeight + 2) - Math.max(1, footerHeight - 34));
     }
 
     private double mapCenterX() {

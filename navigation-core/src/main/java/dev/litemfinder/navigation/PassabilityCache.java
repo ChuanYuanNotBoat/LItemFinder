@@ -30,6 +30,12 @@ public final class PassabilityCache {
 
     /** The platform adapter must call this only after checking collision and movement rules. */
     public synchronized void observeConnection(Waypoint from, Waypoint to, Instant observedAt) {
+        observeDirectedConnection(from, to, from.distanceTo(to), observedAt);
+        observeDirectedConnection(to, from, from.distanceTo(to), observedAt);
+    }
+
+    /** Direction and effective distance account for asymmetric climbs, drops and slower surfaces. */
+    public synchronized void observeDirectedConnection(Waypoint from, Waypoint to, double effectiveMeters, Instant observedAt) {
         Objects.requireNonNull(from, "from must not be null");
         Objects.requireNonNull(to, "to must not be null");
         if (from.equals(to) || !from.scope().equals(to.scope())
@@ -39,12 +45,24 @@ public final class PassabilityCache {
         if (capacity < 2) {
             throw new IllegalStateException("a walking connection requires capacity for two points");
         }
+        if (!Double.isFinite(effectiveMeters) || effectiveMeters < from.distanceTo(to)) {
+            throw new IllegalArgumentException("movement cost cannot be shorter than geometric distance");
+        }
         observe(from, observedAt);
         observe(to, observedAt);
-        double distance = from.distanceTo(to);
-        Connection connection = new Connection(distance, observedAt);
+        Connection connection = new Connection(effectiveMeters, observedAt);
         nodes.get(from).connections.put(to, connection);
-        nodes.get(to).connections.put(from, connection);
+    }
+
+    /** Private search copy: no game objects or later observation mutations are shared with a worker. */
+    public synchronized PassabilityCache copy() {
+        PassabilityCache copy = new PassabilityCache(capacity);
+        nodes.forEach((point, node) -> {
+            Node cloned = new Node(node.observedAt);
+            cloned.connections.putAll(node.connections);
+            copy.nodes.put(point, cloned);
+        });
+        return copy;
     }
 
     public synchronized void invalidate(Waypoint point) {

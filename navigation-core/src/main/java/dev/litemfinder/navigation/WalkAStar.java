@@ -21,6 +21,14 @@ public final class WalkAStar {
 
     public WalkPath find(Waypoint start, Waypoint goal, TravelerProfile profile,
                          Instant now, Duration maxDataAge, int maxExpanded) {
+        return findAny(start, java.util.Set.of(goal), goal, profile, now, maxDataAge, maxExpanded);
+    }
+
+    /** Multiple verified interaction positions avoid routing into a solid storage block itself. */
+    public WalkPath findAny(Waypoint start, java.util.Set<Waypoint> goals, Waypoint hint, TravelerProfile profile,
+                            Instant now, Duration maxDataAge, int maxExpanded) {
+        goals = java.util.Set.copyOf(goals);
+        Waypoint goal = Objects.requireNonNull(hint);
         Objects.requireNonNull(start, "start must not be null");
         Objects.requireNonNull(goal, "goal must not be null");
         Objects.requireNonNull(profile, "profile must not be null");
@@ -32,10 +40,10 @@ public final class WalkAStar {
         double speed = profile.speed(TravelMode.WALK);
         if (!profile.enabledModes().contains(TravelMode.WALK) || speed <= 0
                 || !start.scope().equals(goal.scope()) || !start.dimension().equals(goal.dimension())
-                || !cache.known(start, now, maxDataAge) || !cache.known(goal, now, maxDataAge)) {
+                || !cache.known(start, now, maxDataAge)) {
             return new WalkPath(NavigationResult.Status.UNKNOWN, List.of(), 0);
         }
-        if (start.equals(goal)) {
+        if (goals.contains(start)) {
             return new WalkPath(NavigationResult.Status.FOUND, List.of(start), 0);
         }
 
@@ -43,22 +51,22 @@ public final class WalkAStar {
         Map<Waypoint, Waypoint> previous = new HashMap<>();
         PriorityQueue<QueueEntry> queue = new PriorityQueue<>(Comparator.comparingDouble(QueueEntry::score));
         cost.put(start, 0.0);
-        queue.add(new QueueEntry(start, heuristic(start, goal, speed)));
+        queue.add(new QueueEntry(start, heuristic(start, goals, goal, speed)));
         Waypoint closest = start;
-        double closestHeuristic = heuristic(start, goal, speed);
+        double closestHeuristic = heuristic(start, goals, goal, speed);
         int expanded = 0;
 
         while (!queue.isEmpty()) {
             QueueEntry current = queue.remove();
             double currentCost = cost.getOrDefault(current.point(), Double.POSITIVE_INFINITY);
-            if (current.score() > currentCost + heuristic(current.point(), goal, speed) + 1e-9) {
+            if (current.score() > currentCost + heuristic(current.point(), goals, goal, speed) + 1e-9) {
                 continue;
             }
-            if (current.point().equals(goal)) {
+            if (goals.contains(current.point())) {
                 return new WalkPath(NavigationResult.Status.FOUND,
-                        reconstruct(start, goal, previous), currentCost);
+                        reconstruct(start, current.point(), previous), currentCost);
             }
-            double remaining = heuristic(current.point(), goal, speed);
+            double remaining = heuristic(current.point(), goals, goal, speed);
             if (remaining < closestHeuristic) {
                 closest = current.point();
                 closestHeuristic = remaining;
@@ -67,20 +75,24 @@ public final class WalkAStar {
                 return new WalkPath(NavigationResult.Status.PARTIAL,
                         reconstruct(start, closest, previous), cost.get(closest));
             }
-            cache.connections(current.point(), now, maxDataAge).forEach((neighbor, meters) -> {
+            for (var connection : cache.connections(current.point(), now, maxDataAge).entrySet()) {
+                Waypoint neighbor = connection.getKey();
+                double meters = connection.getValue();
                 double candidate = currentCost + meters / speed;
                 if (candidate < cost.getOrDefault(neighbor, Double.POSITIVE_INFINITY)) {
                     cost.put(neighbor, candidate);
                     previous.put(neighbor, current.point());
-                    queue.add(new QueueEntry(neighbor, candidate + heuristic(neighbor, goal, speed)));
+                    queue.add(new QueueEntry(neighbor, candidate + heuristic(neighbor, goals, goal, speed)));
                 }
-            });
+            }
         }
-        return new WalkPath(NavigationResult.Status.UNKNOWN, List.of(), 0);
+        return closest.equals(start) ? new WalkPath(NavigationResult.Status.UNKNOWN, List.of(), 0)
+                : new WalkPath(NavigationResult.Status.PARTIAL, reconstruct(start, closest, previous), cost.get(closest));
     }
 
-    private static double heuristic(Waypoint from, Waypoint to, double speed) {
-        return from.distanceTo(to) / speed;
+    private static double heuristic(Waypoint from, java.util.Set<Waypoint> goals, Waypoint hint, double speed) {
+        return goals.isEmpty() ? from.distanceTo(hint) / speed
+                : goals.stream().mapToDouble(from::distanceTo).min().orElseThrow() / speed;
     }
 
     private static List<Waypoint> reconstruct(Waypoint start, Waypoint end,

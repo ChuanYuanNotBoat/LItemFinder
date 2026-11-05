@@ -47,6 +47,18 @@ public final class CuriosInventoryReader implements EquipmentInventorySource {
     }
 
     private static Function<LivingEntity, Optional<Map<String, IItemHandler>>> optionalSource() {
+        // The inventory source is constructed during parallel mod construction. Resolve optional API classes only
+        // when the first real player is observed, after all mods have finished loading.
+        return new Function<>() {
+            private Function<LivingEntity, Optional<Map<String, IItemHandler>>> delegate;
+            @Override public Optional<Map<String, IItemHandler>> apply(LivingEntity player) {
+                if (delegate == null) delegate = resolveSource();
+                return delegate.apply(player);
+            }
+        };
+    }
+
+    private static Function<LivingEntity, Optional<Map<String, IItemHandler>>> resolveSource() {
         try {
             ClassLoader loader = CuriosInventoryReader.class.getClassLoader();
             Class<?> api = Class.forName("top.theillusivec4.curios.api.CuriosApi", false, loader);
@@ -56,11 +68,12 @@ public final class CuriosInventoryReader implements EquipmentInventorySource {
             Method stacks = Class.forName("top.theillusivec4.curios.api.type.inventory.ICurioStacksHandler", false, loader)
                     .getMethod("getStacks");
             return new Function<>() {
-                private boolean failed;
+                private boolean warned;
+                private long retryAfter;
 
                 @Override
                 public Optional<Map<String, IItemHandler>> apply(LivingEntity player) {
-                    if (failed) return Optional.empty();
+                    if (System.nanoTime() < retryAfter) return Optional.empty();
                     try {
                         Object value = inventory.invoke(null, player);
                         if (!(value instanceof Optional<?> optional) || optional.isEmpty()) return Optional.empty();
@@ -74,8 +87,9 @@ public final class CuriosInventoryReader implements EquipmentInventorySource {
                         }
                         return Optional.of(result);
                     } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
-                        failed = true;
-                        LogUtils.getLogger().warn("Curios equipment capture is unavailable", exception);
+                        retryAfter = System.nanoTime() + 5_000_000_000L;
+                        if (!warned) LogUtils.getLogger().warn("Curios equipment capture is temporarily unavailable; retrying", exception);
+                        warned = true;
                         return Optional.empty();
                     }
                 }

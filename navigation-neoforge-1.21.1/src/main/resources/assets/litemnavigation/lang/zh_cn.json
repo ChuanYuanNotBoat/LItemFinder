@@ -1,0 +1,15 @@
+{
+  "litemnavigation.searching": "正在检查已观察的步行空间…",
+  "litemnavigation.result": "%s · 约 %s 秒 · %s",
+  "litemnavigation.status.found": "已找到步行路线",
+  "litemnavigation.status.partial": "已知部分路线",
+  "litemnavigation.status.unknown": "暂时没有经过验证的步行路线",
+  "litemnavigation.status.unreachable": "无法到达目标",
+  "litemnavigation.reason.none": "只读指引，不会自动移动",
+  "litemnavigation.reason.no_world": "请先进入对应的世界",
+  "litemnavigation.reason.other_dimension": "需要已验证的跨维度连接",
+  "litemnavigation.reason.unobserved": "靠近并加载更多沿途区域后重试",
+  "litemnavigation.reason.budget": "已达观察预算，请靠近目标后重试",
+  "litemnavigation.reason.world_changed": "世界数据已变化，请重新计算",
+  "litemnavigation.reason.unsupported": "暂不支持当前移动状态或姿态"
+}

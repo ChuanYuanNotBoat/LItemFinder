@@ -44,9 +44,11 @@ public final class ContainerContentsScreen extends Screen {
     private Button itemsTab, fluidsTab;
     private final List<Integer> nestedPath = new ArrayList<>();
     private final Map<ItemKey, ItemVisual> visuals = new HashMap<>();
+    private final ContainerItemTooltip itemTooltip = new ContainerItemTooltip();
     private ContainerOverview.RootRow root;
     private List<SlotHit> slotHits = List.of();
     private Button upButton;
+    private Button equipmentButton;
     private int scrollRows;
     private int ticks;
     private ContainerRecord layoutContainer;
@@ -71,13 +73,15 @@ public final class ContainerContentsScreen extends Screen {
         upButton = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.contents.up"),
                         ignored -> moveUp())
                 .bounds(Math.max(12, width - 132), 24, 62, 20).build());
+        equipmentButton = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.player.equipment"),
+                ignored -> jumpToEquipment()).bounds(Math.max(12, width - 210), 24, 72, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.back"), ignored -> onClose())
                 .bounds(width - 64, 24, 52, 20).build());
         itemsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.items"), ignored -> switchMode(false))
-                .bounds(100, 3, 46, 20).build());
+                .bounds(Math.max(100, 24 + font.width(title)), 3, 46, 20).build());
         itemsTab.active = fluidMode;
         fluidsTab = addRenderableWidget(Button.builder(Component.translatable("gui.litemfinder.tabs.fluids"), ignored -> switchMode(true))
-                .bounds(150, 3, 46, 20).build());
+                .bounds(Math.max(100, 24 + font.width(title)) + 50, 3, 46, 20).build());
         fluidsTab.active = !fluidMode;
         fluids.initialize(button -> addRenderableWidget(button));
         refresh();
@@ -110,13 +114,18 @@ public final class ContainerContentsScreen extends Screen {
         }
 
         String breadcrumb = breadcrumb(node);
-        graphics.drawString(font, font.plainSubstrByWidth(breadcrumb, Math.max(30, width - 156)),
+        graphics.drawString(font, font.plainSubstrByWidth(breadcrumb, Math.max(30, width - (equipmentButton.visible ? 238 : 156))),
                 12, 31, 0xFFB8C6D2);
         String summary = (fluidMode ? fluids.summary() : Component.translatable("gui.litemfinder.contents.summary",
                 node.contents().size(), node.slotCount())).getString();
+        if (!fluidMode && "true".equals(node.container().metadata().get("recoveryCapacityUnknown"))) {
+            summary = Component.translatable("gui.litemfinder.contents.unknown_capacity", node.contents().size()).getString();
+        }
         if (!fluidMode && node.container().metadata().containsKey("captureCoverage")) {
             summary += " · " + Component.translatable("gui.litemfinder.contents.partial").getString();
         }
+        boolean recovered = "true".equals(node.container().metadata().get("recoveryIncomplete"));
+        if (recovered) summary = Component.translatable("gui.litemfinder.contents.recovered").getString() + " · " + summary;
         boolean stale = node.observedAt().isBefore(Instant.now().minus(STALE_HINT_AFTER));
         int staleX = Math.max(12, width - 23);
         int staleY = 54;
@@ -137,7 +146,26 @@ public final class ContainerContentsScreen extends Screen {
         }
         updateButtons();
         super.render(graphics, mouseX, mouseY, partialTick);
+        if (recovered && mouseY >= 51 && mouseY < CONTENT_TOP) {
+            graphics.renderTooltip(font, Component.translatable("gui.litemfinder.contents.recovery_help"), mouseX, mouseY);
+        }
         if (fluidMode) fluids.tooltip(graphics, font, mouseX, mouseY);
+        else {
+            SlotHit hovered = slotHits.stream().filter(hit -> hit.contains(mouseX, mouseY)).findFirst().orElse(null);
+            if (hovered != null) {
+                PreviewNode current = currentNode();
+                String equipment = current == null ? "" : current.container().metadata().getOrDefault("accessorySlot." + hovered.slot().slot(), "");
+                if (equipment.isEmpty() && current != null && current.container().type().id().toString().equals("minecraft:player_inventory")) {
+                    equipment = playerSlot(hovered.slot().slot());
+                }
+                boolean container = hovered.slot().nestedContainer().isPresent()
+                        || current != null && java.util.Arrays.asList(current.container().metadata()
+                        .getOrDefault(dev.litemfinder.core.snapshot.NestedInventoryObservation.UNAVAILABLE, "").split(","))
+                        .contains(Integer.toString(hovered.slot().slot()));
+                itemTooltip.render(graphics, font, width, height, mouseX, mouseY, Component.literal(hovered.visual().name()),
+                        equipment, hovered.slot().stack().count(), container, hovered.slot().nestedContainer().orElse(null));
+            }
+        }
         if (stale && contains(mouseX, mouseY, staleX, staleY,
                 staleX + STALE_INDICATOR_SIZE, staleY + STALE_INDICATOR_SIZE)) {
             graphics.renderTooltip(font, Component.translatable("gui.litemfinder.contents.stale",
@@ -291,7 +319,20 @@ public final class ContainerContentsScreen extends Screen {
         if (upButton != null) {
             upButton.active = !nestedPath.isEmpty();
         }
+        if (equipmentButton != null) equipmentButton.visible = !fluidMode && nestedPath.isEmpty() && root != null
+                && root.container().type().id().toString().equals("minecraft:player_inventory")
+                && root.container().metadata().keySet().stream().anyMatch(key -> key.startsWith("accessorySlot."));
         fluids.scope(rootId, nestedPath);
+    }
+
+    private void jumpToEquipment() {
+        PreviewNode node = currentNode();
+        if (node == null) return;
+        var layout = layout(node);
+        int y = layout.positions().stream().filter(position -> node.container().metadata().containsKey("accessorySlot." + position.slot()))
+                .mapToInt(dev.litemfinder.neoforge.api.inventory.InventoryLayout.Position::y).min().orElse(layout.minY());
+        scrollRows = Math.max(0, (y - layout.minY()) / SLOT_SIZE);
+        clampScroll(node);
     }
 
     private void switchMode(boolean showFluids) {
@@ -343,7 +384,7 @@ public final class ContainerContentsScreen extends Screen {
         PreviewNode node = currentNode();
         String equipment = node == null ? null : node.container().metadata().get("accessorySlot." + hit.slot().slot());
         if (equipment != null) {
-            label.append(" · ").append(equipment);
+            label.append(" · ").append(ContainerItemTooltip.equipmentName(equipment).getString());
         }
         String variant = hit.slot().stack().item().variant();
         if (!variant.isEmpty()) {
@@ -410,6 +451,14 @@ public final class ContainerContentsScreen extends Screen {
             return count / 1_000_000 + "m";
         }
         return count / 1_000_000_000 + "b";
+    }
+
+    private static String playerSlot(int slot) {
+        String type = slot < 9 ? "hotbar" : slot < 36 ? "main" : switch (slot) {
+            case 36 -> "feet"; case 37 -> "legs"; case 38 -> "chest"; case 39 -> "head"; case 40 -> "offhand";
+            default -> "accessory";
+        };
+        return "player/" + type;
     }
 
     private record PreviewNode(ContainerRecord container, Instant observedAt, int slotCount,

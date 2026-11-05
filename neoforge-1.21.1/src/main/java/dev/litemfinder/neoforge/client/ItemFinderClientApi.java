@@ -5,9 +5,9 @@ import dev.litemfinder.core.model.NamespacedId;
 import dev.litemfinder.core.model.ItemKey;
 import dev.litemfinder.core.search.SearchQuery;
 import dev.litemfinder.core.search.SearchResponse;
-import dev.litemfinder.neoforge.client.view.InventoryOverview;
+import dev.litemfinder.core.view.InventoryOverview;
 import dev.litemfinder.core.view.ContainerOverview;
-import dev.litemfinder.neoforge.client.view.AcquisitionPlan;
+import dev.litemfinder.core.view.AcquisitionPlan;
 
 import java.util.List;
 import java.util.Map;

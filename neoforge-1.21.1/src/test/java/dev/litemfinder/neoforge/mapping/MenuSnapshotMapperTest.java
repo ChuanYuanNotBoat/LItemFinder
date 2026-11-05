@@ -79,6 +79,36 @@ class MenuSnapshotMapperTest {
         assertTrue(root.slots().stream().noneMatch(slot -> slot.stack().item().itemId().path().equals("emerald")));
     }
 
+    @Test
+    void indexesStandardContainerComponentsOnOtherItemsWithOriginalNestedSlotNumbers() {
+        ItemStack carrier = new ItemStack(Items.PAPER);
+        NonNullList<ItemStack> contents = NonNullList.withSize(6, ItemStack.EMPTY);
+        contents.set(5, shulkerContaining(new ItemStack(Items.DIAMOND, 7)));
+        carrier.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(contents));
+        SimpleContainer chest = new SimpleContainer(27);
+        chest.setItem(2, carrier);
+        Inventory player = new Inventory(null);
+        ChestMenu menu = ChestMenu.threeRows(1, player, chest);
+        MenuPartition partition = new VanillaMenuSlotPartitioner(true).partition(menu, player);
+        var identity = ContainerIdentityFactory.block("standard-components", NamespacedId.parse("minecraft:overworld"),
+                0, 64, 0, NamespacedId.parse("minecraft:generic_9x3"));
+        var request = new MenuCaptureRequest(identity, menu, partition,
+                new MenuFingerprintCalculator().calculate(menu, partition, registries()), CaptureReason.OPEN_STABLE);
+        var root = new MenuSnapshotMapper(new CachedItemTagResolver()).map(request, registries(), CAPTURED_AT);
+        var nested = root.slots().getFirst().nestedContainer().orElseThrow();
+        assertEquals(6, nested.slotCount());
+        assertEquals(5, nested.slots().getFirst().slot());
+        var shulker = nested.slots().getFirst().nestedContainer().orElseThrow();
+        assertEquals(27, shulker.slotCount());
+        assertEquals(7, shulker.slots().getFirst().stack().count());
+        assertTrue(shulker.container().id().value().endsWith(":2.5"));
+
+        carrier.set(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
+        var emptied = new NestedItemContentsReader().read(carrier, registries()).orElseThrow();
+        assertEquals(0, emptied.slotCount(), "an explicit empty component is known empty without inventing capacity");
+        assertTrue(emptied.stacks().isEmpty());
+    }
+
     private static ItemStack shulkerContaining(ItemStack content) {
         NonNullList<ItemStack> contents = NonNullList.withSize(27, ItemStack.EMPTY);
         contents.set(0, content);

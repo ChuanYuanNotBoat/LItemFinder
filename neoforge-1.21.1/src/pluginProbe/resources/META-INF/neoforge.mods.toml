@@ -1,0 +1,15 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="GPL-3.0"
+
+[[mods]]
+modId="litemfinder_compat_probe"
+version="1.0.0"
+displayName="LItemFinder compatibility probe (development only)"
+
+[[dependencies.litemfinder_compat_probe]]
+modId="litemfinder"
+type="required"
+versionRange="[0,)"
+ordering="AFTER"
+side="CLIENT"

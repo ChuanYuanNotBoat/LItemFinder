@@ -1,0 +1,15 @@
+{
+  "litemnavigation.searching": "Checking observed walking space…",
+  "litemnavigation.result": "%s · about %s s · %s",
+  "litemnavigation.status.found": "Walking route found",
+  "litemnavigation.status.partial": "Known part of the route",
+  "litemnavigation.status.unknown": "No verified walking route yet",
+  "litemnavigation.status.unreachable": "Destination unreachable",
+  "litemnavigation.reason.none": "Read-only guidance; no automatic movement",
+  "litemnavigation.reason.no_world": "Enter the matching world first",
+  "litemnavigation.reason.other_dimension": "A verified dimension connection is needed",
+  "litemnavigation.reason.unobserved": "Approach and load more of the route, then try again",
+  "litemnavigation.reason.budget": "Observation budget reached; approach the destination and retry",
+  "litemnavigation.reason.world_changed": "World data changed; request a fresh route",
+  "litemnavigation.reason.unsupported": "Current movement or pose is not supported"
+}

@@ -26,5 +26,8 @@ jobs:
         with:
           cache-provider: basic
 
-      - name: Build and test
-        run: ./gradlew check --no-daemon
+      - name: Check inventory and its navigation-free installable JAR
+        run: ./gradlew :core:check :storage-sqlite:check :neoforge-1.21.1:check --no-daemon
+
+      - name: Check optional navigation and its standalone installable JAR
+        run: ./gradlew :navigation-core:check :navigation-neoforge-1.21.1:check --no-daemon

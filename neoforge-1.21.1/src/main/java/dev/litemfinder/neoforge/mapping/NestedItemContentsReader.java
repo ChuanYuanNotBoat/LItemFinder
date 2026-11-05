@@ -34,7 +34,27 @@ public final class NestedItemContentsReader {
         this.itemFluids = Objects.requireNonNull(itemFluids);
     }
 
-    public boolean hasCachedFluids(ItemStack stack) { return backpacks.accepts(stack) || SophisticatedBackpackContents.isBackpackItem(stack); }
+    private boolean usesBackpackCache(ItemStack stack) {
+        return backpacks.accepts(stack) || SophisticatedBackpackContents.isBackpackItem(stack);
+    }
+
+    public boolean hasCachedFluids(ItemStack stack) { return usesBackpackCache(stack); }
+
+    public boolean isContainer(ItemStack stack) {
+        return usesBackpackCache(stack) || stack.has(DataComponents.CONTAINER)
+                || stack.getItem() instanceof BlockItem block && block.getBlock() instanceof ShulkerBoxBlock;
+    }
+
+    public Map<String, String> previewMetadata(ItemStack stack) { return backpacks.previewMetadata(stack); }
+
+    public void markUnavailable(Map<String, String> metadata, Map<Integer, ItemStack> stacks, HolderLookup.Provider registries) {
+        stacks.forEach((slot, stack) -> backpacks.identity(stack).ifPresent(identity -> metadata.put(
+                dev.litemfinder.core.snapshot.NestedInventoryObservation.IDENTITY_PREFIX + slot, identity)));
+        String missing = stacks.entrySet().stream().filter(entry -> !entry.getValue().isEmpty() && isContainer(entry.getValue())
+                && read(entry.getValue(), registries).isEmpty()).map(entry -> Integer.toString(entry.getKey()))
+                .collect(java.util.stream.Collectors.joining(","));
+        if (!missing.isEmpty()) metadata.put(dev.litemfinder.core.snapshot.NestedInventoryObservation.UNAVAILABLE, missing);
+    }
 
     public Optional<dev.litemfinder.neoforge.api.inventory.FluidInventory> readFluids(ItemStack stack, HolderLookup.Provider registries) {
         try {
@@ -44,11 +64,12 @@ public final class NestedItemContentsReader {
     }
 
     public Optional<NestedItemContents> read(ItemStack stack, HolderLookup.Provider registries) {
-        if (stack.getItem() instanceof BlockItem block && block.getBlock() instanceof ShulkerBoxBlock) {
-            var contents = stack.get(DataComponents.CONTAINER);
-            if (contents == null || contents.getSlots() == 0) {
-                return Optional.empty();
-            }
+        // The vanilla component is an explicit, already-synchronized storage contract used by modded items too.
+        // Sophisticated backpacks use their own synchronized cache and must retain that authoritative reader.
+        boolean shulker = stack.getItem() instanceof BlockItem block && block.getBlock() instanceof ShulkerBoxBlock;
+        var contents = stack.get(DataComponents.CONTAINER);
+        if (shulker || (contents != null && !usesBackpackCache(stack))) {
+            if (contents == null || contents.getSlots() == 0) return Optional.of(new NestedItemContents(shulker ? 27 : 0, Map.of()));
             Map<Integer, ItemStack> occupied = new TreeMap<>();
             for (int slot = 0; slot < contents.getSlots(); slot++) {
                 ItemStack nested = contents.getStackInSlot(slot);
@@ -56,7 +77,7 @@ public final class NestedItemContentsReader {
                     occupied.put(slot, nested);
                 }
             }
-            return Optional.of(new NestedItemContents(Math.max(27, contents.getSlots()), occupied));
+            return Optional.of(new NestedItemContents(shulker ? Math.max(27, contents.getSlots()) : contents.getSlots(), occupied));
         }
         return backpacks.read(stack, registries);
     }

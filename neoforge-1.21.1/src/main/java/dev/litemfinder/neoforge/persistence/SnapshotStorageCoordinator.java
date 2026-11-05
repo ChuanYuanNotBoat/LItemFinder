@@ -46,6 +46,7 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
     // Accessed only by the storage executor.
     private String currentScope;
     private SnapshotRepository currentRepository;
+    private SnapshotRepository removedRepository;
 
     public SnapshotStorageCoordinator(Path indexDirectory) {
         this(indexDirectory, DEFAULT_PENDING_CAPACITY);
@@ -147,7 +148,14 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
 
     /** Removes the observed snapshot only if it is still current after earlier writes finish. */
     public CompletableFuture<Boolean> removeCurrentScopeContainer(InventorySnapshot expectedSnapshot) {
+        return removeCurrentScopeContainer(expectedSnapshot, () -> true);
+    }
+
+    /** The client can revoke physical removal evidence while this write waits behind other work. */
+    public CompletableFuture<Boolean> removeCurrentScopeContainer(InventorySnapshot expectedSnapshot,
+            java.util.function.BooleanSupplier evidenceValid) {
         Objects.requireNonNull(expectedSnapshot, "expectedSnapshot must not be null");
+        Objects.requireNonNull(evidenceValid, "evidenceValid must not be null");
         if (!isAccepting()) {
             return CompletableFuture.completedFuture(false);
         }
@@ -159,10 +167,17 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
                 try {
                     boolean snapshotIsCurrent = expectedScope.equals(currentScope)
                             && currentIndex.rootSnapshots().stream().anyMatch(expectedSnapshot::equals);
-                    if (!snapshotIsCurrent) {
+                    if (!snapshotIsCurrent || !evidenceValid.getAsBoolean()) {
                         removed.complete(false);
                         return;
                     }
+                    // Keep a complete recovery copy before any automatic physical deletion. If this write fails,
+                    // abort removal; an unavailable recovery store must never turn into permanent data loss.
+                    if (currentRepository != null) {
+                        if (removedRepository == null) removedRepository = new SqliteSnapshotRepository(removedDatabaseFile(currentScope));
+                        removedRepository.save(expectedSnapshot);
+                    }
+                    if (!evidenceValid.getAsBoolean()) { removed.complete(false); return; }
                     boolean repositoryRemoved = currentRepository != null && currentRepository.delete(containerId);
                     boolean indexRemoved = currentIndex.remove(containerId);
                     removed.complete(repositoryRemoved || indexRemoved);
@@ -209,6 +224,10 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
             throw new IllegalArgumentException("scope hash must be lowercase SHA-256");
         }
         return indexDirectory.resolve(hash + ".db");
+    }
+
+    Path removedDatabaseFile(String scope) {
+        return indexDirectory.resolve("removed").resolve(databaseFile(scope).getFileName());
     }
 
     private void drainPending() {
@@ -264,6 +283,10 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
     }
 
     private void closeCurrentScope() {
+        if (removedRepository != null) {
+            removedRepository.close();
+            removedRepository = null;
+        }
         if (currentRepository != null) {
             currentRepository.close();
         }
@@ -276,6 +299,12 @@ public final class SnapshotStorageCoordinator implements AutoCloseable {
         if (currentRepository == null) {
             currentIndex = new InMemoryStorageIndex();
             return 0;
+        }
+        if (removedRepository == null && java.nio.file.Files.exists(removedDatabaseFile(currentScope))) {
+            removedRepository = new SqliteSnapshotRepository(removedDatabaseFile(currentScope));
+        }
+        if (removedRepository != null) {
+            for (var snapshot : removedRepository.findAll()) removedRepository.delete(snapshot.container().id());
         }
         var snapshots = currentRepository.findAll();
         for (InventorySnapshot snapshot : snapshots) {

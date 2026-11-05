@@ -5,6 +5,9 @@
 
 # LItem Finder Design Document
 
+> 本文包含长期设计，不代表全部能力已实现。当前 beta 的实现范围、优先级及验收状态统一见
+> [开发状态与 TODO](development-status.md)。
+>
 > 2026-09-23 补充：GUI、容器地图与可选独立导航的具体提案见
 > [GUI 与导航架构](gui-navigation-architecture.md)；分阶段退出条件见
 > [实施计划](gui-navigation-implementation-plan.md)。下文的 `RoutePlanner` 仍指现有同维度、
@@ -742,7 +745,7 @@ Planner:
 
 ---
 
-## Phase 4（M0-M4 已完成，M5 Alpha 验收中）
+## Phase 4（M0-M4 已完成，M5 剩余项纳入当前 beta TODO）
 
 NeoForge 1.21.1：
 
@@ -750,9 +753,10 @@ NeoForge 1.21.1：
 - 只读 Container Scanner
 - ItemStack、Data Components 与标签适配
 - 潜影盒嵌套内容
-- SQLite 生命周期与 Alpha 打包
+- SQLite 生命周期与安装 JAR 打包
 
-详细计划见 [next-phase-neoforge-1.21.1.md](next-phase-neoforge-1.21.1.md)。
+采集阶段设计见 [NeoForge M0-M5 计划](next-phase-neoforge-1.21.1.md)。当前待办及验收状态统一见
+[开发状态与 TODO](development-status.md)，不再以早期 Alpha 候选版本为发布目标。
 
 ---
 
@@ -762,16 +766,18 @@ NeoForge 客户端体验：
 
 - 类型化客户端查询接口与库存/根容器摘要（已实现首批）
 - 紧凑库存总览、数量编辑与会话草稿（已实现首批）
+- 同页物品/液体切换、液体汇总与地图投影（已实现，整合包交互待复测）
 - 精确 variant 来源分配与会话获取计划（已实现首批，不自动执行）
-- 全屏容器地图和局部 3D Y 层投影视图（已实现首批）
+- 全屏 2D 容器地图、真实方块 3D 场景与独立槽位/嵌套内容预览（已实现，视觉与性能待复测）
 - 搜索、设置、分组与诊断界面
 - 可选导航服务接入后的路线渲染
 
-独立 `navigation-core` 已建立纯 Java 搜索和前置任务提案原型；游戏世界观测与可安装导航 Mod
-仍待实现，地图在服务缺席时仅显示示意停靠线。
+独立 `navigation-core` 已建立碰撞步行、搜索和前置任务提案原型；`navigation-neoforge-1.21.1`
+已有世界观测、失效、独立命令与可选桥接。导航成品打包、独立/联装启动探针与对应回归已通过，
+真实世界路线和完整结果摘要仍待验收或实现；地图在服务缺席时仅显示示意停靠线。
 
 具体架构和阶段验收见 [GUI 与导航架构](gui-navigation-architecture.md) 与
-[实施计划](gui-navigation-implementation-plan.md)。导航按可独立模块/Mod 设计，不属于库存功能的
+[实施计划](gui-navigation-implementation-plan.md)，当前排期见统一 TODO。导航按可独立模块/Mod 设计，不属于库存功能的
 运行硬依赖。
 
 ---

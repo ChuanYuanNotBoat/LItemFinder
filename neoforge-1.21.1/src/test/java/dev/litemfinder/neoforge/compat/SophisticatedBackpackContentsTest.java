@@ -256,6 +256,31 @@ class SophisticatedBackpackContentsTest {
         ), registries, CAPTURED_AT.plusSeconds(seconds));
     }
 
+    @Test
+    void unavailableEquippedBackpackRetainsStatisticsAndSyncedEmptyThenClearsThem() {
+        player.setItem(3, ItemStack.EMPTY);
+        var accessory = List.of(new AccessorySlot("curios/back", 0, backpack(BACKPACK)));
+        var data = contents(120, item(7, "minecraft:diamond", 4462));
+        var upgrades = new CompoundTag();
+        var upgradeItems = new ListTag();
+        upgradeItems.add(item(0, "minecraft:diamond", 1));
+        upgrades.put("Items", upgradeItems); data.put("upgradeInventory", upgrades);
+        synced.put(BACKPACK, data);
+        var first = equippedSnapshot(accessory, 0);
+        var bag = first.slots().getFirst().nestedContainer().orElseThrow();
+        assertEquals("minecraft:diamond", bag.container().metadata().get("previewUpgrade.0"));
+        var index = new InMemoryStorageIndex(); index.update(first);
+        assertEquals(4462, new dev.litemfinder.core.search.IndexedSearchEngine(index).findExact(ItemKey.parse("minecraft:diamond")).totalCount());
+        synced.put(BACKPACK, new CompoundTag());
+        var unavailable = equippedSnapshot(accessory, 1);
+        assertEquals("41", unavailable.container().metadata().get(dev.litemfinder.core.snapshot.NestedInventoryObservation.UNAVAILABLE));
+        index.update(dev.litemfinder.core.snapshot.SnapshotMerger.retainUnavailable(unavailable, first));
+        assertEquals(4462, new dev.litemfinder.core.search.IndexedSearchEngine(index).findExact(ItemKey.parse("minecraft:diamond")).totalCount());
+        synced.put(BACKPACK, contents(120));
+        index.update(equippedSnapshot(accessory, 2));
+        assertTrue(index.findExact(ItemKey.parse("minecraft:diamond")).isEmpty());
+    }
+
     private InventorySnapshot snapshot(int seconds) {
         return mapper.map(new MenuCaptureRequest(
                 ContainerIdentityFactory.playerInventory("test-world", BACKPACK), menu, partition,

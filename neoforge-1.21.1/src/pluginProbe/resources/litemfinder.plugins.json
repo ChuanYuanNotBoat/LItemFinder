@@ -1,0 +1,17 @@
+{
+  "litemfinder_compat_probe:a_rollback": {
+    "entrypoint": "dev.litemfinder.compatprobe.CompatibilityProbe$BrokenPlugin"
+  },
+  "litemfinder_compat_probe:b_good": {
+    "entrypoint": "dev.litemfinder.compatprobe.CompatibilityProbe$WorkingPlugin",
+    "required": {"litemfinder": "[0,)", "minecraft": "[1.21.1]"}
+  },
+  "litemfinder_compat_probe:c_missing": {
+    "entrypoint": "dev.litemfinder.compatprobe.CompatibilityProbe$MustNotLoad",
+    "required": {"litemfinder_missing_dependency": "[1,)"}
+  },
+  "litemfinder_compat_probe:d_wrong_version": {
+    "entrypoint": "dev.litemfinder.compatprobe.CompatibilityProbe$MustNotLoad",
+    "required": {"minecraft": "[9,)"}
+  }
+}

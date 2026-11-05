@@ -13,10 +13,24 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /** Positive opt-in contracts; arbitrary unsynchronized block capabilities are never interpreted as empty. */
 public final class FluidInventoryAdapters {
+    private static final TypedInventoryAdapterRegistry<BlockEntity, FluidInventory> TYPED = new TypedInventoryAdapterRegistry<>();
+    private static final TypedInventoryAdapterRegistry<BlockEntity, dev.litemfinder.neoforge.api.inventory.BlockFluidInventory> TYPED_BLOCKS = new TypedInventoryAdapterRegistry<>();
     private static final CopyOnWriteArrayList<FluidInventoryAdapter> ADAPTERS = new CopyOnWriteArrayList<>();
     private static final CopyOnWriteArrayList<dev.litemfinder.neoforge.api.inventory.BlockFluidInventoryAdapter> BLOCK_ADAPTERS =
             new CopyOnWriteArrayList<>(java.util.List.of(new dev.litemfinder.neoforge.compat.FunctionalStorageFluidReader()));
     private FluidInventoryAdapters() { }
+
+    public static <T extends BlockEntity> AutoCloseable register(net.minecraft.resources.ResourceLocation id,
+            Class<T> type, int priority, java.util.function.Function<? super T,
+            dev.litemfinder.neoforge.api.inventory.InventoryReadResult<FluidInventory>> reader) {
+        return TYPED.register(id, type, priority, reader);
+    }
+
+    public static <T extends BlockEntity> AutoCloseable registerBlock(net.minecraft.resources.ResourceLocation id,
+            Class<T> type, int priority, java.util.function.Function<? super T,
+            dev.litemfinder.neoforge.api.inventory.InventoryReadResult<dev.litemfinder.neoforge.api.inventory.BlockFluidInventory>> reader) {
+        return TYPED_BLOCKS.register(id, type, priority, reader);
+    }
 
     public static AutoCloseable register(FluidInventoryAdapter adapter) {
         ADAPTERS.add(0, Objects.requireNonNull(adapter));
@@ -32,6 +46,10 @@ public final class FluidInventoryAdapters {
         return () -> BLOCK_ADAPTERS.remove(adapter);
     }
     public static Optional<dev.litemfinder.neoforge.api.inventory.BlockFluidInventory> readBlock(BlockEntity owner) {
+        var selected = TYPED_BLOCKS.read(owner);
+        if (selected.state() != dev.litemfinder.neoforge.api.inventory.InventoryReadResult.State.UNSUPPORTED) {
+            return selected.value();
+        }
         var registered = readRegisteredBlock(owner);
         if (registered.isPresent()) return registered;
         var type = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(owner.getType());
@@ -51,6 +69,14 @@ public final class FluidInventoryAdapters {
     }
 
     public static Optional<FluidInventory> read(BlockEntity owner) {
+        var selected = TYPED.read(owner);
+        if (selected.state() != dev.litemfinder.neoforge.api.inventory.InventoryReadResult.State.UNSUPPORTED) {
+            return selected.value();
+        }
+        var blockSelected = TYPED_BLOCKS.read(owner);
+        if (blockSelected.state() != dev.litemfinder.neoforge.api.inventory.InventoryReadResult.State.UNSUPPORTED) {
+            return blockSelected.value().map(dev.litemfinder.neoforge.api.inventory.BlockFluidInventory::fluids);
+        }
         for (var adapter : ADAPTERS) {
             try {
                 var value = adapter.read(owner);

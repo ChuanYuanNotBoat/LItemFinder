@@ -1,6 +1,6 @@
 package dev.litemfinder.neoforge.client.gui;
 
-import dev.litemfinder.neoforge.client.view.QuantityFormat;
+import dev.litemfinder.core.view.QuantityFormat;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /** Client-only persisted display modes. Quantity values are always stored as integers. */

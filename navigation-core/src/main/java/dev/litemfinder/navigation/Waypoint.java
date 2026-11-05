@@ -3,11 +3,14 @@ package dev.litemfinder.navigation;
 import java.util.Objects;
 
 /** A position inside one privacy-scoped world and dimension. */
-public record Waypoint(String scope, String dimension, int x, int y, int z) {
+public record Waypoint(String scope, String dimension, double x, double y, double z) {
 
     public Waypoint {
         scope = nonBlank(scope, "scope");
         dimension = nonBlank(dimension, "dimension");
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
+            throw new IllegalArgumentException("waypoint coordinates must be finite");
+        }
     }
 
     public double distanceTo(Waypoint other) {

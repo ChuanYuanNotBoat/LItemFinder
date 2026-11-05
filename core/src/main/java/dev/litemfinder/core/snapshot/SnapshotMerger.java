@@ -26,6 +26,9 @@ public final class SnapshotMerger {
             previous.slots().forEach(slot -> slots.put(slot.slot(), slot));
             metadata.putAll(previous.container().metadata());
         }
+        metadata.remove(NestedInventoryObservation.UNAVAILABLE);
+        if (complete) metadata.keySet().removeIf(key -> key.startsWith(NestedInventoryObservation.IDENTITY_PREFIX));
+        else covered.forEach(slot -> metadata.remove(NestedInventoryObservation.IDENTITY_PREFIX + slot));
         metadata.putAll(visible.container().metadata());
         mergeFluids(metadata, previous, visible, complete);
         ItemFluidSnapshotMetadata.mergeVisible(metadata, previous, observation);
@@ -36,6 +39,9 @@ public final class SnapshotMerger {
             metadata.remove("captureCoverage");
             metadata.remove("observedSlots");
             metadata.remove("lastPartialObservedAt");
+            metadata.remove("recoveryIncomplete");
+            metadata.remove("recoveryCapacityUnknown");
+            metadata.remove("recoverySource");
         } else {
             Set<Integer> observed = new TreeSet<>(covered);
             if (previous != null) {
@@ -83,7 +89,8 @@ public final class SnapshotMerger {
     }
 
     public static InventorySnapshot retainUnavailable(InventorySnapshot incoming, InventorySnapshot previous) {
-        var retained = FluidSnapshotMetadata.preserveUnavailable(incoming, previous);
+        var retained = NestedInventoryObservation.retainUnavailable(incoming, previous);
+        retained = FluidSnapshotMetadata.preserveUnavailable(retained, previous);
         retained = retainNetwork(retained, previous);
         return ItemFluidSnapshotMetadata.preserveUnavailable(retained, previous);
     }

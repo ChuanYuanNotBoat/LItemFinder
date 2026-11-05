@@ -149,10 +149,72 @@ class SnapshotStorageCoordinatorTest {
 
             assertTrue(storage.removeCurrentScopeContainer(snapshot).get());
             assertEquals(0, storage.currentIndex().rootContainerCount());
+            try (var archive = new SqliteSnapshotRepository(storage.removedDatabaseFile(scope))) {
+                assertEquals(snapshot, archive.find(snapshot.container().id()).orElseThrow());
+            }
         }
 
         try (SqliteSnapshotRepository repository = new SqliteSnapshotRepository(database)) {
             assertTrue(repository.findAll().isEmpty());
+        }
+    }
+
+    @Test
+    void revokedWorldEvidenceCannotDeleteAnOtherwiseCurrentSnapshot(@TempDir Path directory) throws Exception {
+        String scope = ScopeIdFactory.singleplayer("revoked-removal-evidence");
+        var expected = snapshot(scope, "keep-me", ItemKey.parse("minecraft:coal"), 7);
+        try (var storage = new SnapshotStorageCoordinator(directory)) {
+            storage.submit(expected, true); storage.flush();
+            assertFalse(storage.removeCurrentScopeContainer(expected, () -> false).get());
+            assertEquals(expected, storage.currentIndex().rootSnapshots().getFirst());
+            try (var repository = new SqliteSnapshotRepository(storage.databaseFile(scope))) {
+                assertEquals(expected, repository.find(expected.container().id()).orElseThrow());
+            }
+        }
+    }
+
+    @Test
+    void explicitScopeClearAlsoClearsAutomaticRemovalCopies(@TempDir Path directory) throws Exception {
+        String scope = ScopeIdFactory.singleplayer("clear-removal-copies");
+        var expected = snapshot(scope, "removed", ItemKey.parse("minecraft:coal"), 7);
+        try (var storage = new SnapshotStorageCoordinator(directory)) {
+            storage.submit(expected, true); storage.flush();
+            assertTrue(storage.removeCurrentScopeContainer(expected).get());
+            assertEquals(0, storage.clearCurrentScopeData());
+            try (var archive = new SqliteSnapshotRepository(storage.removedDatabaseFile(scope))) {
+                assertTrue(archive.findAll().isEmpty());
+            }
+        }
+    }
+
+    @Test
+    void failedRecoveryWriteAbortsAutomaticDeletion(@TempDir Path directory) throws Exception {
+        String scope = ScopeIdFactory.singleplayer("archive-unavailable");
+        var expected = snapshot(scope, "keep-on-archive-failure", ItemKey.parse("minecraft:coal"), 7);
+        java.nio.file.Files.createFile(directory.resolve("removed"));
+        try (var storage = new SnapshotStorageCoordinator(directory)) {
+            storage.submit(expected, true); storage.flush();
+            org.junit.jupiter.api.Assertions.assertThrows(java.util.concurrent.ExecutionException.class,
+                    () -> storage.removeCurrentScopeContainer(expected).get());
+            assertEquals(expected, storage.currentIndex().rootSnapshots().getFirst());
+            try (var repository = new SqliteSnapshotRepository(storage.databaseFile(scope))) {
+                assertEquals(expected, repository.find(expected.container().id()).orElseThrow());
+            }
+        }
+    }
+
+    @Test
+    void evidenceRevokedDuringRecoveryWriteStillPreservesTheLiveRecord(@TempDir Path directory) throws Exception {
+        String scope = ScopeIdFactory.singleplayer("revoked-after-archive");
+        var expected = snapshot(scope, "keep-after-archive", ItemKey.parse("minecraft:coal"), 7);
+        var checks = new java.util.concurrent.atomic.AtomicInteger();
+        try (var storage = new SnapshotStorageCoordinator(directory)) {
+            storage.submit(expected, true); storage.flush();
+            assertFalse(storage.removeCurrentScopeContainer(expected, () -> checks.incrementAndGet() == 1).get());
+            assertEquals(expected, storage.currentIndex().rootSnapshots().getFirst());
+            try (var archive = new SqliteSnapshotRepository(storage.removedDatabaseFile(scope))) {
+                assertEquals(expected, archive.find(expected.container().id()).orElseThrow());
+            }
         }
     }
 

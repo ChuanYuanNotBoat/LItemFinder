@@ -23,10 +23,17 @@ public final class ClientDebugCommands {
 
     private final ItemFinderClientApi client;
     private final Runnable openOverview;
+    private final java.util.function.Supplier<dev.litemfinder.neoforge.compat.InventoryPluginLoader.Report> plugins;
 
     public ClientDebugCommands(ItemFinderClientApi client, Runnable openOverview) {
+        this(client, openOverview, () -> new dev.litemfinder.neoforge.compat.InventoryPluginLoader.Report(List.of()));
+    }
+
+    public ClientDebugCommands(ItemFinderClientApi client, Runnable openOverview,
+            java.util.function.Supplier<dev.litemfinder.neoforge.compat.InventoryPluginLoader.Report> plugins) {
         this.client = Objects.requireNonNull(client, "client must not be null");
         this.openOverview = Objects.requireNonNull(openOverview, "openOverview must not be null");
+        this.plugins = Objects.requireNonNull(plugins, "plugins must not be null");
     }
 
     public void register(RegisterClientCommandsEvent event) {
@@ -34,6 +41,7 @@ public final class ClientDebugCommands {
                 .executes(this::showHelp)
                 .then(Commands.literal("gui").executes(this::openGui))
                 .then(Commands.literal("stats").executes(this::showStats))
+                .then(Commands.literal("compat").executes(this::showCompatibility))
                 .then(Commands.literal("search")
                         .then(Commands.argument("text", StringArgumentType.greedyString())
                                 .executes(this::search)))
@@ -46,7 +54,7 @@ public final class ClientDebugCommands {
     }
 
     private int showHelp(CommandContext<CommandSourceStack> context) {
-        reply(context.getSource(), "LItem Finder: /litemfinder gui | stats | search <text> | exact <namespace:item> | clear confirm");
+        reply(context.getSource(), "LItem Finder: /litemfinder gui | stats | compat | search <text> | exact <namespace:item> | clear confirm");
         return 1;
     }
 
@@ -70,6 +78,18 @@ public final class ClientDebugCommands {
                 + "\nSession-only reasons: " + formatCounters(capture.sessionOnlyReasons())
                 + "\nRemoval reasons: " + formatCounters(capture.removalReasons());
         reply(context.getSource(), message);
+        return 1;
+    }
+
+    private int showCompatibility(CommandContext<CommandSourceStack> context) {
+        var report = plugins.get();
+        var message = new StringBuilder("LItem Finder optional inventory plugins: ")
+                .append(report.count(dev.litemfinder.neoforge.compat.InventoryPluginLoader.Status.LOADED)).append(" loaded, ")
+                .append(report.count(dev.litemfinder.neoforge.compat.InventoryPluginLoader.Status.SKIPPED)).append(" skipped, ")
+                .append(report.count(dev.litemfinder.neoforge.compat.InventoryPluginLoader.Status.FAILED)).append(" failed");
+        report.outcomes().stream().limit(DISPLAY_LIMIT).forEach(outcome -> message.append("\n")
+                .append(outcome.id()).append(": ").append(outcome.status()).append(" ").append(outcome.detail()));
+        reply(context.getSource(), message.toString());
         return 1;
     }
 

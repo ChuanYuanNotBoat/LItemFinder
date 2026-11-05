@@ -4,6 +4,10 @@ build/
 **/bin/
 **/run/
 **/run-packaged/
+**/run-plugin-probe/
+**/run-navigation-probe/
+**/run-standalone-probe/
+**/run-route-ui-probe/
 *.patch
 
 .idea/

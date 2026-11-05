@@ -92,6 +92,7 @@ public final class MenuSnapshotMapper {
         dev.litemfinder.neoforge.capture.FluidInventoryAdapters.readMenu(request.menu())
                 .ifPresent(fluids -> FluidInventoryMetadata.write(metadata, fluids, registries, capturedAt));
         ItemFluidInventoryMetadata.capture(metadata, fluidItems, contentsReader, registries, capturedAt);
+        contentsReader.markUnavailable(metadata, fluidItems, registries);
         root = new ContainerRecord(root.id(), root.type(), root.location(), metadata);
         return new InventorySnapshot(root, slotCount, capturedAt, occupied);
     }
@@ -123,6 +124,7 @@ public final class MenuSnapshotMapper {
             mapSlot(stacks.get(slot), slot, root, registries, capturedAt).ifPresent(occupied::add);
         }
         ItemFluidInventoryMetadata.capture(metadata, fluidItems, contentsReader, registries, capturedAt);
+        contentsReader.markUnavailable(metadata, fluidItems, registries);
         root = new ContainerRecord(root.id(), root.type(), root.location(), metadata);
         return new InventorySnapshot(root, stacks.size(), capturedAt, occupied);
     }
@@ -149,6 +151,7 @@ public final class MenuSnapshotMapper {
         window.fluids().ifPresent(fluids -> FluidInventoryMetadata.write(metadata, fluids, registries, capturedAt));
         if (window.fluids().isPresent()) metadata.put("fluidCoverage", window.complete() ? "COMPLETE" : "PARTIAL");
         ItemFluidInventoryMetadata.capture(metadata, window.slots(), contentsReader, registries, capturedAt);
+        contentsReader.markUnavailable(metadata, window.slots(), registries);
         var root = new ContainerRecord(source.id(), source.type(), source.location(), metadata);
         List<SlotSnapshot> occupied = new ArrayList<>();
         window.slots().forEach((slot, stack) -> mapSlot(stack, slot, root, registries, capturedAt).ifPresent(occupied::add));

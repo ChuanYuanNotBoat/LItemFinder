@@ -14,6 +14,7 @@ import java.util.Optional;
 
 /** Finds explicit backing storage contracts instead of guessing a mod menu's slot layout. */
 public final class StorageMenuAdapters {
+    private static final TypedInventoryAdapterRegistry<AbstractContainerMenu, MenuStorage> TYPED = new TypedInventoryAdapterRegistry<>();
     private static final ClassValue<java.util.concurrent.ConcurrentMap<String, Optional<Method>>> ACCESSORS = new ClassValue<>() {
         @Override protected java.util.concurrent.ConcurrentMap<String, Optional<Method>> computeValue(Class<?> type) {
             return new java.util.concurrent.ConcurrentHashMap<>();
@@ -26,6 +27,12 @@ public final class StorageMenuAdapters {
     private StorageMenuAdapters() {
     }
 
+    public static <T extends AbstractContainerMenu> AutoCloseable register(net.minecraft.resources.ResourceLocation id,
+            Class<T> type, int priority, java.util.function.Function<? super T,
+            dev.litemfinder.neoforge.api.inventory.InventoryReadResult<MenuStorage>> reader) {
+        return TYPED.register(id, type, priority, reader);
+    }
+
     /** Registered adapters take precedence over the common public accessor contracts. */
     public static AutoCloseable register(StorageMenuAdapter adapter) {
         java.util.Objects.requireNonNull(adapter);
@@ -34,6 +41,10 @@ public final class StorageMenuAdapters {
     }
 
     public static Optional<MenuStorage> resolve(AbstractContainerMenu menu) {
+        var selected = TYPED.read(menu);
+        if (selected.state() != dev.litemfinder.neoforge.api.inventory.InventoryReadResult.State.UNSUPPORTED) {
+            return selected.value();
+        }
         for (StorageMenuAdapter adapter : ADAPTERS) {
             try {
                 Optional<MenuStorage> storage = adapter.resolve(menu);
